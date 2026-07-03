@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Klip Arşivi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1017;
+  --panel:#151a24;
+  --panel-2:#1b2130;
+  --line:#262e40;
+  --text:#e8ecf4;
+  --muted:#8b94a8;
+  --rec:#ff4d4d;
+  --amber:#ffb454;
+  --green:#5dd39e;
+  --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;min-height:100%}
+body{padding-bottom:80px}
+
+/* ---------- üst bar ---------- */
+header{
+  max-width:1100px;margin:0 auto;padding:34px 20px 10px;
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:14px}
+.rec-dot{
+  width:14px;height:14px;border-radius:50%;background:var(--rec);
+  box-shadow:0 0 0 0 rgba(255,77,77,.5);animation:pulse 1.6s infinite;flex:none;
+}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(255,77,77,.45)}
+  70%{box-shadow:0 0 0 12px rgba(255,77,77,0)}
+  100%{box-shadow:0 0 0 0 rgba(255,77,77,0)}
+}
+@media (prefers-reduced-motion:reduce){.rec-dot{animation:none}}
+h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;text-transform:uppercase}
+.sub{color:var(--muted);font-size:13px;margin-top:2px}
+.head-right{display:flex;align-items:center;gap:10px}
+.count-chip{
+  font-family:'Chakra Petch',sans-serif;font-size:13px;letter-spacing:.08em;
+  border:1px solid var(--line);border-radius:999px;padding:7px 14px;color:var(--amber);
+  background:var(--panel);white-space:nowrap;
+}
+.icon-btn{
+  width:38px;height:38px;border-radius:999px;border:1px solid var(--line);
+  background:var(--panel);color:var(--muted);cursor:pointer;display:grid;place-items:center;
+  transition:color .15s,border-color .15s;
+}
+.icon-btn:hover{color:var(--text);border-color:#3a4560}
+.icon-btn svg{width:17px;height:17px}
+
+/* ---------- araç çubuğu ---------- */
+.toolbar{max-width:1100px;margin:18px auto 0;padding:0 20px;display:flex;gap:10px}
+.search{
+  flex:1;display:flex;align-items:center;gap:10px;background:var(--panel);
+  border:1px solid var(--line);border-radius:var(--radius);padding:11px 16px;
+}
+.search svg{flex:none;opacity:.5}
+.search input{
+  flex:1;background:none;border:none;outline:none;color:var(--text);
+  font:inherit;font-size:15px;
+}
+.search input::placeholder{color:var(--muted)}
+
+/* ---------- video ızgarası ---------- */
+.grid{
+  max-width:1100px;margin:22px auto 0;padding:0 20px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;
+}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;cursor:pointer;transition:transform .15s ease,border-color .15s ease;
+  text-align:left;display:flex;flex-direction:column;font:inherit;color:inherit;
+}
+.card:hover,.card:focus-visible{transform:translateY(-3px);border-color:#3a4560;outline:none}
+.card:focus-visible{box-shadow:0 0 0 2px var(--amber)}
+.thumb{position:relative;aspect-ratio:16/9;background:var(--panel-2);overflow:hidden}
+.thumb video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.thumb .play{
+  position:absolute;inset:0;display:grid;place-items:center;
+  background:linear-gradient(to top,rgba(13,16,23,.55),transparent 55%);
+}
+.thumb .play svg{width:42px;height:42px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5));opacity:.9}
+.dur{
+  position:absolute;right:8px;bottom:8px;font-family:'Chakra Petch',sans-serif;
+  font-size:12px;background:rgba(13,16,23,.8);border-radius:6px;padding:2px 7px;
+  letter-spacing:.05em;
+}
+.meta{padding:12px 14px 13px}
+.meta .name{font-weight:600;font-size:14.5px;line-height:1.35;word-break:break-word}
+.meta .info{color:var(--muted);font-size:12.5px;margin-top:4px;font-family:'Chakra Petch',sans-serif;letter-spacing:.04em}
+
+/* ---------- durum ekranları ---------- */
+.state{
+  max-width:640px;margin:60px auto;padding:0 20px;text-align:center;color:var(--muted);
+  font-size:15px;line-height:1.7;
+}
+.state .big{font-family:'Chakra Petch',sans-serif;font-size:20px;color:var(--text);margin-bottom:10px}
+.state code{
+  background:var(--panel);border:1px solid var(--line);border-radius:6px;
+  padding:2px 7px;font-size:13px;color:var(--amber);
+}
+.spinner{
+  width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--amber);
+  border-radius:50%;margin:0 auto 18px;animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- modallar ---------- */
+.modal{
+  position:fixed;inset:0;background:rgba(8,10,15,.88);backdrop-filter:blur(6px);
+  display:none;place-items:center;padding:20px;z-index:50;overflow-y:auto;
+}
+.modal.open{display:grid}
+.player-box{width:min(960px,100%)}
+.player-box video{
+  width:100%;max-height:72vh;border-radius:var(--radius);background:#000;
+  border:1px solid var(--line);display:block;
+}
+.modal-bar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.modal-bar .title{
+  flex:1;font-family:'Chakra Petch',sans-serif;font-size:15px;letter-spacing:.03em;
+  min-width:180px;word-break:break-word;
+}
+.btn{
+  font:inherit;font-size:13.5px;font-weight:500;color:var(--text);
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:9px 15px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;
+  text-decoration:none;transition:border-color .15s;
+}
+.btn:hover{border-color:#3a4560}
+.btn.primary{background:var(--amber);color:#1a1408;border-color:var(--amber);font-weight:600}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn svg{width:15px;height:15px}
+
+/* ---------- yükleme paneli ---------- */
+.panel{
+  width:min(520px,100%);background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);padding:26px;
+}
+.panel h2{
+  font-family:'Chakra Petch',sans-serif;font-size:18px;letter-spacing:.04em;
+  text-transform:uppercase;margin-bottom:4px;display:flex;align-items:center;gap:10px;
+}
+.panel h2 .rec-dot{width:10px;height:10px}
+.panel .desc{color:var(--muted);font-size:13.5px;line-height:1.6;margin-bottom:18px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:500}
+.field input{
+  width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:11px 14px;color:var(--text);font:inherit;font-size:15px;outline:none;
+}
+.field input:focus{border-color:var(--amber)}
+.pin-input{letter-spacing:.5em;text-align:center;font-family:'Chakra Petch',sans-serif;font-size:20px !important}
+.err{color:var(--rec);font-size:13px;margin-top:8px;display:none}
+.err.show{display:block}
+.hint{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.5}
+.hint a{color:var(--amber)}
+.panel-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+
+.drop{
+  border:2px dashed var(--line);border-radius:var(--radius);padding:30px 16px;
+  text-align:center;color:var(--muted);font-size:14px;cursor:pointer;
+  transition:border-color .15s,background .15s;margin-bottom:14px;
+}
+.drop:hover,.drop.over{border-color:var(--amber);background:rgba(255,180,84,.04)}
+.drop .big-ico{font-size:28px;margin-bottom:6px}
+.up-list{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.up-item{
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;font-size:13.5px;
+}
+.up-item .row{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.up-item .fname{word-break:break-all;font-weight:500}
+.up-item .status{font-family:'Chakra Petch',sans-serif;font-size:12px;white-space:nowrap;color:var(--muted)}
+.up-item .status.ok{color:var(--green)}
+.up-item .status.fail{color:var(--rec)}
+.bar{height:4px;background:var(--line);border-radius:99px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--amber);border-radius:99px;transition:width .3s}
+
+.toast{
+  position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:10px 18px;font-size:14px;opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;z-index:60;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+footer{
+  max-width:1100px;margin:50px auto 0;padding:0 20px;color:var(--muted);
+  font-size:12.5px;font-family:'Chakra Petch',sans-serif;letter-spacing:.05em;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="rec-dot"></div>
+    <div>
+      <h1>Klip Arşivi</h1>
+      <div class="sub">Oyun içi kayıtlar · izlemek için karta tıkla</div>
+    </div>
+  </div>
+  <div class="head-right">
+    <div class="count-chip" id="countChip">—</div>
+    <button class="icon-btn" id="uploadOpenBtn" title="Video yükle (sadece yönetici)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <label class="search">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="searchInput" type="text" placeholder="Klip ara..." autocomplete="off">
+  </label>
+</div>
+
+<div id="content"></div>
+
+<footer id="footer"></footer>
+
+<!-- oynatıcı -->
+<div class="modal" id="playerModal">
+  <div class="player-box">
+    <video id="modalVideo" controls playsinline></video>
+    <div class="modal-bar">
+      <div class="title" id="modalTitle"></div>
+      <button class="btn" id="copyBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Linki kopyala
+      </button>
+      <a class="btn" id="dlBtn" download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        İndir
+      </a>
+      <button class="btn primary" id="closeBtn">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<!-- şifre ekranı -->
+<div class="modal" id="pinModal">
+  <div class="panel">
+    <h2><span class="rec-dot"></span>Yönetici Girişi</h2>
+    <p class="desc">Video yükleme paneli sadece sana açık. Şifreni gir.</p>
+    <div class="field">
+      <input class="pin-input" id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="••••" autocomplete="off">
+      <div class="err" id="pinErr">Şifre yanlış.</div>
+    </div>
+    <div class="panel-actions">
+      <button class="btn" id="pinCancel">Vazgeç</button>
+      <button class="btn primary" id="pinOk">Giriş</button>
+    </div>
+  </div>
+</div>
+
+<!-- yükleme paneli -->
+<div class="modal" id="uploadModal">
+  <div class="panel">
+    <h2><span class="rec-dot"></span>Video Yükle</h2>
+    <p class="desc">Seçtiğin videolar repodaki <b>videos/</b> klasörüne kaydedilir ve listede otomatik görünür.</p>
+
+    <div class="field" id="tokenField">
+      <label>GitHub Token (bir kez girilir, bu tarayıcıda saklanır)</label>
+      <input id="tokenInput" type="password" placeholder="ghp_... veya github_pat_..." autocomplete="off">
+      <div class="hint">
+        GitHub → Settings → Developer settings → <b>Personal access tokens (Fine-grained)</b> →
+        sadece bu repoyu seç, izin olarak <b>Contents: Read and write</b> ver. Token'ı kimseyle paylaşma.
+      </div>
+    </div>
+
+    <div class="drop" id="dropZone">
+      <div class="big-ico">🎬</div>
+      Videoları buraya sürükle veya <b>tıklayıp seç</b><br>
+      <span style="font-size:12px">mp4 / webm · dosya başına en fazla ~95 MB</span>
+    </div>
+    <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime" multiple hidden>
+
+    <div class="up-list" id="upList"></div>
+    <div class="err" id="upErr"></div>
+
+    <div class="panel-actions">
+      <button class="btn" id="tokenForget">Token'ı unut</button>
+      <button class="btn" id="uploadClose">Kapat</button>
+      <button class="btn primary" id="uploadStart" disabled>Yüklemeyi başlat</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Link kopyalandı</div>
+
+<script>
+/* ================= AYARLAR =================
+   Videolar reponun içindeki bu klasörde durur.
+   Sayfa GitHub Pages'te açılınca kullanıcı/repo
+   otomatik bulunur; local test için FALLBACK
+   değerlerini doldur.                          */
+const VIDEO_FOLDER = "videos";
+const FALLBACK_OWNER = "alpycens";     // github kullanıcı adın
+const FALLBACK_REPO  = "clips";        // repo adın
+const BRANCH = "main";
+/* Yönetici şifresinin SHA-256 özeti (0623)     */
+const PIN_HASH = "b5d8a55fb763ff8e61c885c836cbfdb97f9699b2eadac509be2a9c38b62f8857";
+/* =========================================== */
+
+const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
+const MAX_BYTES = 95 * 1024 * 1024; // API güvenli sınırı
+
+function detectRepo(){
+  const h = location.hostname, p = location.pathname.split("/").filter(Boolean);
+  if (h.endsWith(".github.io")) {
+    const owner = h.replace(".github.io","");
+    const repo = p.length ? p[0] : owner + ".github.io";
+    return {owner, repo};
+  }
+  return {owner: FALLBACK_OWNER, repo: FALLBACK_REPO};
+}
+const {owner, repo} = detectRepo();
+
+const content = document.getElementById("content");
+const countChip = document.getElementById("countChip");
+const searchInput = document.getElementById("searchInput");
+const footer = document.getElementById("footer");
+let allVideos = [];
+
+/* ---------- yardımcılar ---------- */
+function fmtSize(b){
+  if (b >= 1e9) return (b/1e9).toFixed(2)+" GB";
+  if (b >= 1e6) return (b/1e6).toFixed(1)+" MB";
+  return Math.round(b/1e3)+" KB";
+}
+function fmtDur(s){
+  if (!isFinite(s)) return "";
+  s = Math.round(s);
+  return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+}
+function niceName(f){ return f.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ").trim(); }
+function showState(html){ content.innerHTML = '<div class="state">'+html+'</div>'; }
+async function sha256(text){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
+}
+
+/* ---------- listeleme ---------- */
+async function load(){
+  showState('<div class="spinner"></div>Klipler yükleniyor...');
+  try{
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&t=${Date.now()}`;
+    const r = await fetch(url);
+    if (r.status === 404) {
+      allVideos = [];
+      countChip.textContent = "0 KLİP";
+      showState(`<div class="big">Henüz klip yok</div>
+        Sağ üstteki yükleme düğmesinden ilk videonu yükle,
+        <code>${VIDEO_FOLDER}/</code> klasörü otomatik oluşur.`);
+      return;
+    }
+    if (!r.ok) throw new Error("Liste alınamadı (hata "+r.status+")");
+    const items = await r.json();
+    allVideos = items
+      .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
+      .map(i => ({ name: i.name, size: i.size, src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name) }))
+      .sort((a,b) => b.name.localeCompare(a.name));
+    render(allVideos);
+    const v = new URLSearchParams(location.search).get("v");
+    if (v) {
+      const hit = allVideos.find(x => x.name === v);
+      if (hit) openPlayer(hit);
+    }
+  }catch(e){
+    showState(`<div class="big">Yüklenemedi</div>${e.message}<br>Sayfayı yenilemeyi dene.`);
+  }
+}
+
+function render(list){
+  countChip.textContent = list.length + " KLİP";
+  if (!list.length){
+    showState(`<div class="big">Klip bulunamadı</div>Aramanla eşleşen video yok.`);
+    return;
+  }
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  list.forEach(v => {
+    const card = document.createElement("button");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="thumb">
+        <video preload="metadata" muted playsinline src="${v.src}#t=0.5"></video>
+        <div class="play"><svg viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>
+        <div class="dur"></div>
+      </div>
+      <div class="meta">
+        <div class="name">${niceName(v.name)}</div>
+        <div class="info">${fmtSize(v.size)}</div>
+      </div>`;
+    const vid = card.querySelector("video");
+    vid.addEventListener("loadedmetadata", () => {
+      card.querySelector(".dur").textContent = fmtDur(vid.duration);
+    }, {once:true});
+    card.addEventListener("click", () => openPlayer(v));
+    grid.appendChild(card);
+  });
+  content.innerHTML = "";
+  content.appendChild(grid);
+}
+
+searchInput.addEventListener("input", () => {
+  const q = searchInput.value.toLowerCase().trim();
+  render(allVideos.filter(v => v.name.toLowerCase().includes(q)));
+});
+
+/* ---------- oynatıcı ---------- */
+const playerModal = document.getElementById("playerModal");
+const modalVideo = document.getElementById("modalVideo");
+const modalTitle = document.getElementById("modalTitle");
+const copyBtn = document.getElementById("copyBtn");
+const dlBtn = document.getElementById("dlBtn");
+const toast = document.getElementById("toast");
+let current = null;
+
+function openPlayer(v){
+  current = v;
+  modalVideo.src = v.src;
+  modalTitle.textContent = niceName(v.name);
+  dlBtn.href = v.src;
+  dlBtn.setAttribute("download", v.name);
+  playerModal.classList.add("open");
+  modalVideo.play().catch(()=>{});
+  const u = new URL(location);
+  u.searchParams.set("v", v.name);
+  history.replaceState(null,"",u);
+}
+function closePlayer(){
+  playerModal.classList.remove("open");
+  modalVideo.pause();
+  modalVideo.removeAttribute("src");
+  modalVideo.load();
+  const u = new URL(location);
+  u.searchParams.delete("v");
+  history.replaceState(null,"",u);
+}
+document.getElementById("closeBtn").addEventListener("click", closePlayer);
+playerModal.addEventListener("click", e => { if (e.target === playerModal) closePlayer(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { closePlayer(); closePin(); closeUpload(); }
+});
+
+copyBtn.addEventListener("click", async () => {
+  if (!current) return;
+  const u = new URL(location.origin + location.pathname);
+  u.searchParams.set("v", current.name);
+  try{
+    await navigator.clipboard.writeText(u.toString());
+    showToast("Link kopyalandı");
+  }catch(e){ prompt("Linki kopyala:", u.toString()); }
+});
+
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 2200);
+}
+
+/* ---------- şifre ---------- */
+const pinModal = document.getElementById("pinModal");
+const pinInput = document.getElementById("pinInput");
+const pinErr = document.getElementById("pinErr");
+let unlocked = sessionStorage.getItem("clipAdmin") === "1";
+
+document.getElementById("uploadOpenBtn").addEventListener("click", () => {
+  if (unlocked) { openUpload(); return; }
+  pinInput.value = "";
+  pinErr.classList.remove("show");
+  pinModal.classList.add("open");
+  setTimeout(() => pinInput.focus(), 50);
+});
+document.getElementById("pinCancel").addEventListener("click", closePin);
+function closePin(){ pinModal.classList.remove("open"); }
+
+async function tryPin(){
+  const h = await sha256(pinInput.value.trim());
+  if (h === PIN_HASH) {
+    unlocked = true;
+    sessionStorage.setItem("clipAdmin","1");
+    closePin();
+    openUpload();
+  } else {
+    pinErr.classList.add("show");
+    pinInput.value = "";
+    pinInput.focus();
+  }
+}
+document.getElementById("pinOk").addEventListener("click", tryPin);
+pinInput.addEventListener("keydown", e => { if (e.key === "Enter") tryPin(); });
+pinModal.addEventListener("click", e => { if (e.target === pinModal) closePin(); });
+
+/* ---------- yükleme ---------- */
+const uploadModal = document.getElementById("uploadModal");
+const tokenInput = document.getElementById("tokenInput");
+const tokenField = document.getElementById("tokenField");
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const upList = document.getElementById("upList");
+const upErr = document.getElementById("upErr");
+const uploadStart = document.getElementById("uploadStart");
+let queue = [];
+
+function openUpload(){
+  const saved = localStorage.getItem("ghToken") || "";
+  tokenInput.value = saved;
+  tokenField.style.display = saved ? "none" : "";
+  queue = [];
+  upList.innerHTML = "";
+  upErr.classList.remove("show");
+  uploadStart.disabled = true;
+  uploadModal.classList.add("open");
+}
+function closeUpload(){ uploadModal.classList.remove("open"); }
+document.getElementById("uploadClose").addEventListener("click", closeUpload);
+uploadModal.addEventListener("click", e => { if (e.target === uploadModal) closeUpload(); });
+
+document.getElementById("tokenForget").addEventListener("click", () => {
+  localStorage.removeItem("ghToken");
+  tokenInput.value = "";
+  tokenField.style.display = "";
+  showToast("Token silindi");
+});
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("over"));
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropZone.classList.remove("over");
+  addFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener("change", () => { addFiles(fileInput.files); fileInput.value = ""; });
+
+function addFiles(files){
+  upErr.classList.remove("show");
+  for (const f of files){
+    if (!VIDEO_EXT.some(e => f.name.toLowerCase().endsWith(e))) {
+      showErr(`"${f.name}" video dosyası değil, atlandı.`); continue;
+    }
+    if (f.size > MAX_BYTES) {
+      showErr(`"${f.name}" ${fmtSize(f.size)} — 95 MB sınırını aşıyor. HandBrake ile sıkıştırıp tekrar dene.`); continue;
+    }
+    if (queue.some(q => q.file.name === f.name)) continue;
+    const item = document.createElement("div");
+    item.className = "up-item";
+    item.innerHTML = `
+      <div class="row">
+        <span class="fname">${f.name}</span>
+        <span class="status">${fmtSize(f.size)}</span>
+      </div>
+      <div class="bar"><i></i></div>`;
+    upList.appendChild(item);
+    queue.push({file: f, el: item});
+  }
+  uploadStart.disabled = queue.length === 0;
+}
+function showErr(msg){
+  upErr.textContent = msg;
+  upErr.classList.add("show");
+}
+
+function fileToBase64(file, onProgress){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => {
+      // "data:...;base64," kısmını at
+      res(r.result.slice(r.result.indexOf(",") + 1));
+    };
+    r.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total * 30); };
+    r.onerror = () => rej(new Error("Dosya okunamadı"));
+    r.readAsDataURL(file);
+  });
+}
+
+uploadStart.addEventListener("click", async () => {
+  const token = tokenInput.value.trim();
+  if (!token) { showErr("Önce GitHub token'ını gir."); tokenField.style.display = ""; return; }
+  localStorage.setItem("ghToken", token);
+  tokenField.style.display = "none";
+  uploadStart.disabled = true;
+  upErr.classList.remove("show");
+  let okCount = 0;
+
+  for (const q of queue){
+    const status = q.el.querySelector(".status");
+    const bar = q.el.querySelector(".bar i");
+    if (status.classList.contains("ok")) { okCount++; continue; }
+    status.textContent = "Hazırlanıyor...";
+    status.className = "status";
+    try{
+      const b64 = await fileToBase64(q.file, p => bar.style.width = p + "%");
+      bar.style.width = "40%";
+      status.textContent = "Yükleniyor...";
+      const safeName = q.file.name.replace(/[^\w.\-() ]+/g, "_");
+      const path = `${VIDEO_FOLDER}/${safeName}`;
+      const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, {
+        method: "PUT",
+        headers: {
+          "Authorization": "Bearer " + token,
+          "Accept": "application/vnd.github+json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: "Klip yüklendi: " + safeName,
+          content: b64,
+          branch: BRANCH
+        })
+      });
+      if (r.status === 401 || r.status === 403) throw new Error("Token geçersiz veya yetkisiz");
+      if (r.status === 422) throw new Error("Aynı isimde dosya zaten var");
+      if (!r.ok) throw new Error("Hata " + r.status);
+      bar.style.width = "100%";
+      status.textContent = "Tamamlandı ✓";
+      status.className = "status ok";
+      okCount++;
+    }catch(e){
+      status.textContent = e.message;
+      status.className = "status fail";
+      bar.style.width = "0";
+    }
+  }
+
+  uploadStart.disabled = false;
+  if (okCount === queue.length && okCount > 0){
+    showToast(okCount + " video yüklendi");
+    setTimeout(() => { closeUpload(); load(); }, 900);
+  } else {
+    load();
+  }
+});
+
+footer.textContent = `${owner}/${repo} · ${VIDEO_FOLDER}/ klasöründen otomatik listelenir`;
+load();
+</script>
+</body>
+</html>

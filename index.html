@@ -618,22 +618,58 @@ document.getElementById("uploadOpenBtn").addEventListener("click", () => askPin(
 /* ---------- GitHub API helpers ---------- */
 function getToken(){ return localStorage.getItem("ghToken") || ""; }
 
-async function ghPut(path, b64, message, sha){
-  const body = { message, content: b64, branch: BRANCH };
-  if (sha) body.sha = sha;
-  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, {
-    method: "PUT",
-    headers: {
-      "Authorization": "Bearer " + getToken(),
-      "Accept": "application/vnd.github+json",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+const GH_API = `https://api.github.com/repos/${owner}/${repo}`;
+function ghHeaders(){
+  return {
+    "Authorization": "Bearer " + getToken(),
+    "Accept": "application/vnd.github+json",
+    "Content-Type": "application/json"
+  };
+}
+async function ghJson(url, opts, step){
+  const r = await fetch(url, opts);
   if (r.status === 401 || r.status === 403) throw new Error("Token is invalid or lacks permission");
-  if (r.status === 422) throw new Error("A file with this name already exists");
-  if (!r.ok) throw new Error("GitHub error " + r.status);
+  if (!r.ok) throw new Error(step + " failed (GitHub error " + r.status + ")");
   return r.json();
+}
+
+/* Commits a file via the Git Database API — reliable for large files
+   (the simpler Contents API throws 500 on files over ~50 MB). */
+async function ghCommitFile(path, b64, message){
+  const H = ghHeaders();
+  // 1) upload content as a blob
+  const blob = await ghJson(GH_API + "/git/blobs", {
+    method: "POST", headers: H,
+    body: JSON.stringify({ content: b64, encoding: "base64" })
+  }, "Blob upload");
+  // 2) latest commit on the branch
+  let ref;
+  try {
+    ref = await ghJson(GH_API + "/git/ref/heads/" + BRANCH, { headers: H }, "Branch lookup");
+  } catch(e) {
+    const info = await ghJson(GH_API, { headers: H }, "Repo lookup");
+    ref = await ghJson(GH_API + "/git/ref/heads/" + info.default_branch, { headers: H }, "Branch lookup");
+  }
+  const parentSha = ref.object.sha;
+  const parentCommit = await ghJson(GH_API + "/git/commits/" + parentSha, { headers: H }, "Commit lookup");
+  // 3) new tree containing the file
+  const tree = await ghJson(GH_API + "/git/trees", {
+    method: "POST", headers: H,
+    body: JSON.stringify({
+      base_tree: parentCommit.tree.sha,
+      tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }]
+    })
+  }, "Tree creation");
+  // 4) new commit
+  const commit = await ghJson(GH_API + "/git/commits", {
+    method: "POST", headers: H,
+    body: JSON.stringify({ message, tree: tree.sha, parents: [parentSha] })
+  }, "Commit creation");
+  // 5) move the branch to the new commit
+  await ghJson(GH_API + "/git/refs/heads/" + ref.ref.replace("refs/heads/",""), {
+    method: "PATCH", headers: H,
+    body: JSON.stringify({ sha: commit.sha })
+  }, "Branch update");
 }
 
 function blobToBase64(blob){
@@ -735,7 +771,7 @@ uploadStart.addEventListener("click", async () => {
       bar.style.width = "40%";
       status.textContent = "Uploading...";
       const safeName = q.file.name.replace(/[^\w.\-() ]+/g, "_");
-      await ghPut(`${VIDEO_FOLDER}/${safeName}`, b64, "Upload clip: " + safeName);
+      await ghCommitFile(`${VIDEO_FOLDER}/${safeName}`, b64, "Upload clip: " + safeName);
       bar.style.width = "100%";
       status.textContent = "Done ✓";
       status.className = "status ok";
@@ -903,11 +939,8 @@ trimGo.addEventListener("click", async () => {
 
     setLog("Uploading... (" + fmtSize(blob.size) + ")");
     const b64 = await blobToBase64(blob);
-    if (replace) {
-      await ghPut(`${VIDEO_FOLDER}/${outName}`, b64, "Trim clip: " + outName, trimTarget.sha);
-    } else {
-      await ghPut(`${VIDEO_FOLDER}/${outName}`, b64, "Trimmed clip: " + outName);
-    }
+    await ghCommitFile(`${VIDEO_FOLDER}/${outName}`, b64,
+      (replace ? "Trim clip: " : "Trimmed clip: ") + outName);
 
     setLog("Done ✓ " + outName + " uploaded. It may take a minute before it plays.", "ok");
     showToast("Trimmed video uploaded");

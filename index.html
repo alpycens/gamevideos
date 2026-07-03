@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Klip Arşivi</title>
+<title>Clip Archive</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -24,7 +24,7 @@
 html,body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;min-height:100%}
 body{padding-bottom:80px}
 
-/* ---------- üst bar ---------- */
+/* ---------- header ---------- */
 header{
   max-width:1100px;margin:0 auto;padding:34px 20px 10px;
   display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
@@ -56,20 +56,17 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .icon-btn:hover{color:var(--text);border-color:#3a4560}
 .icon-btn svg{width:17px;height:17px}
 
-/* ---------- araç çubuğu ---------- */
+/* ---------- toolbar ---------- */
 .toolbar{max-width:1100px;margin:18px auto 0;padding:0 20px;display:flex;gap:10px}
 .search{
   flex:1;display:flex;align-items:center;gap:10px;background:var(--panel);
   border:1px solid var(--line);border-radius:var(--radius);padding:11px 16px;
 }
 .search svg{flex:none;opacity:.5}
-.search input{
-  flex:1;background:none;border:none;outline:none;color:var(--text);
-  font:inherit;font-size:15px;
-}
+.search input{flex:1;background:none;border:none;outline:none;color:var(--text);font:inherit;font-size:15px}
 .search input::placeholder{color:var(--muted)}
 
-/* ---------- video ızgarası ---------- */
+/* ---------- video grid ---------- */
 .grid{
   max-width:1100px;margin:22px auto 0;padding:0 20px;
   display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px;
@@ -77,10 +74,9 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .card{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
   overflow:hidden;cursor:pointer;transition:transform .15s ease,border-color .15s ease;
-  text-align:left;display:flex;flex-direction:column;font:inherit;color:inherit;
+  text-align:left;display:flex;flex-direction:column;font:inherit;color:inherit;position:relative;
 }
-.card:hover,.card:focus-visible{transform:translateY(-3px);border-color:#3a4560;outline:none}
-.card:focus-visible{box-shadow:0 0 0 2px var(--amber)}
+.card:hover,.card:focus-within{transform:translateY(-3px);border-color:#3a4560;outline:none}
 .thumb{position:relative;aspect-ratio:16/9;background:var(--panel-2);overflow:hidden}
 .thumb video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
 .thumb .play{
@@ -90,14 +86,21 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .thumb .play svg{width:42px;height:42px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.5));opacity:.9}
 .dur{
   position:absolute;right:8px;bottom:8px;font-family:'Chakra Petch',sans-serif;
-  font-size:12px;background:rgba(13,16,23,.8);border-radius:6px;padding:2px 7px;
-  letter-spacing:.05em;
+  font-size:12px;background:rgba(13,16,23,.8);border-radius:6px;padding:2px 7px;letter-spacing:.05em;
 }
+.card-link{
+  position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:8px;
+  background:rgba(13,16,23,.75);border:1px solid rgba(255,255,255,.12);color:#fff;
+  display:grid;place-items:center;cursor:pointer;opacity:0;transition:opacity .15s;z-index:2;
+}
+.card:hover .card-link,.card-link:focus-visible{opacity:1}
+.card-link svg{width:15px;height:15px}
 .meta{padding:12px 14px 13px}
 .meta .name{font-weight:600;font-size:14.5px;line-height:1.35;word-break:break-word}
 .meta .info{color:var(--muted);font-size:12.5px;margin-top:4px;font-family:'Chakra Petch',sans-serif;letter-spacing:.04em}
+@media (hover:none){.card-link{opacity:1}}
 
-/* ---------- durum ekranları ---------- */
+/* ---------- states ---------- */
 .state{
   max-width:640px;margin:60px auto;padding:0 20px;text-align:center;color:var(--muted);
   font-size:15px;line-height:1.7;
@@ -113,7 +116,7 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 }
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* ---------- modallar ---------- */
+/* ---------- modals ---------- */
 .modal{
   position:fixed;inset:0;background:rgba(8,10,15,.88);backdrop-filter:blur(6px);
   display:none;place-items:center;padding:20px;z-index:50;overflow-y:auto;
@@ -121,13 +124,13 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .modal.open{display:grid}
 .player-box{width:min(960px,100%)}
 .player-box video{
-  width:100%;max-height:72vh;border-radius:var(--radius);background:#000;
+  width:100%;max-height:70vh;border-radius:var(--radius);background:#000;
   border:1px solid var(--line);display:block;
 }
 .modal-bar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
 .modal-bar .title{
   flex:1;font-family:'Chakra Petch',sans-serif;font-size:15px;letter-spacing:.03em;
-  min-width:180px;word-break:break-word;
+  min-width:160px;word-break:break-word;
 }
 .btn{
   font:inherit;font-size:13.5px;font-weight:500;color:var(--text);
@@ -140,11 +143,12 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn svg{width:15px;height:15px}
 
-/* ---------- yükleme paneli ---------- */
+/* ---------- panels (pin / upload / trim) ---------- */
 .panel{
-  width:min(520px,100%);background:var(--panel);border:1px solid var(--line);
+  width:min(560px,100%);background:var(--panel);border:1px solid var(--line);
   border-radius:var(--radius);padding:26px;
 }
+.panel.wide{width:min(760px,100%)}
 .panel h2{
   font-family:'Chakra Petch',sans-serif;font-size:18px;letter-spacing:.04em;
   text-transform:uppercase;margin-bottom:4px;display:flex;align-items:center;gap:10px;
@@ -153,7 +157,7 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .panel .desc{color:var(--muted);font-size:13.5px;line-height:1.6;margin-bottom:18px}
 .field{margin-bottom:14px}
 .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;font-weight:500}
-.field input{
+.field input[type=text],.field input[type=password]{
   width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
   padding:11px 14px;color:var(--text);font:inherit;font-size:15px;outline:none;
 }
@@ -162,8 +166,7 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .err{color:var(--rec);font-size:13px;margin-top:8px;display:none}
 .err.show{display:block}
 .hint{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.5}
-.hint a{color:var(--amber)}
-.panel-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+.panel-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
 
 .drop{
   border:2px dashed var(--line);border-radius:var(--radius);padding:30px 16px;
@@ -173,10 +176,7 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .drop:hover,.drop.over{border-color:var(--amber);background:rgba(255,180,84,.04)}
 .drop .big-ico{font-size:28px;margin-bottom:6px}
 .up-list{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
-.up-item{
-  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
-  padding:10px 12px;font-size:13.5px;
-}
+.up-item{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px}
 .up-item .row{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .up-item .fname{word-break:break-all;font-weight:500}
 .up-item .status{font-family:'Chakra Petch',sans-serif;font-size:12px;white-space:nowrap;color:var(--muted)}
@@ -184,6 +184,43 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .up-item .status.fail{color:var(--rec)}
 .bar{height:4px;background:var(--line);border-radius:99px;margin-top:8px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--amber);border-radius:99px;transition:width .3s}
+
+/* ---------- trim panel ---------- */
+.trim-video{width:100%;max-height:46vh;border-radius:10px;background:#000;border:1px solid var(--line);display:block;margin-bottom:14px}
+.trim-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.trim-col{flex:1;min-width:200px}
+.time-line{display:flex;gap:8px}
+.time-line input{
+  flex:1;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;color:var(--text);font-family:'Chakra Petch',sans-serif;
+  font-size:16px;text-align:center;outline:none;min-width:0;
+}
+.time-line input:focus{border-color:var(--amber)}
+.mini-btn{
+  font:inherit;font-size:12px;font-weight:500;background:var(--panel-2);color:var(--muted);
+  border:1px solid var(--line);border-radius:8px;padding:0 12px;cursor:pointer;white-space:nowrap;
+}
+.mini-btn:hover{color:var(--text);border-color:#3a4560}
+.trim-len{
+  font-family:'Chakra Petch',sans-serif;font-size:13px;color:var(--amber);
+  letter-spacing:.05em;margin-bottom:12px;
+}
+.radio-row{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.radio-row label{display:flex;align-items:center;gap:9px;font-size:14px;cursor:pointer}
+.radio-row input[type=radio],.check-row input[type=checkbox]{accent-color:var(--amber);width:16px;height:16px}
+.check-row{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--muted);margin-bottom:12px;cursor:pointer}
+.newname-field{margin:0 0 12px 25px}
+.newname-field input{
+  width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:9px 12px;color:var(--text);font:inherit;font-size:14px;outline:none;
+}
+.trim-log{
+  font-family:'Chakra Petch',sans-serif;font-size:12.5px;color:var(--muted);
+  background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;min-height:38px;letter-spacing:.03em;line-height:1.6;
+}
+.trim-log.ok{color:var(--green)}
+.trim-log.fail{color:var(--rec)}
 
 .toast{
   position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(20px);
@@ -205,13 +242,13 @@ footer{
   <div class="brand">
     <div class="rec-dot"></div>
     <div>
-      <h1>Klip Arşivi</h1>
-      <div class="sub">Oyun içi kayıtlar · izlemek için karta tıkla</div>
+      <h1>Clip Archive</h1>
+      <div class="sub">In-game recordings · click a card to watch</div>
     </div>
   </div>
   <div class="head-right">
     <div class="count-chip" id="countChip">—</div>
-    <button class="icon-btn" id="uploadOpenBtn" title="Video yükle (sadece yönetici)">
+    <button class="icon-btn" id="uploadOpenBtn" title="Upload video (admin only)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
     </button>
   </div>
@@ -220,7 +257,7 @@ footer{
 <div class="toolbar">
   <label class="search">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-    <input id="searchInput" type="text" placeholder="Klip ara..." autocomplete="off">
+    <input id="searchInput" type="text" placeholder="Search clips..." autocomplete="off">
   </label>
 </div>
 
@@ -228,60 +265,64 @@ footer{
 
 <footer id="footer"></footer>
 
-<!-- oynatıcı -->
+<!-- player -->
 <div class="modal" id="playerModal">
   <div class="player-box">
     <video id="modalVideo" controls playsinline></video>
     <div class="modal-bar">
       <div class="title" id="modalTitle"></div>
       <button class="btn" id="copyBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-        Linki kopyala
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+        Copy link
       </button>
       <a class="btn" id="dlBtn" download>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-        İndir
+        Download
       </a>
-      <button class="btn primary" id="closeBtn">Kapat</button>
+      <button class="btn" id="trimOpenBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
+        Trim
+      </button>
+      <button class="btn primary" id="closeBtn">Close</button>
     </div>
   </div>
 </div>
 
-<!-- şifre ekranı -->
+<!-- pin screen -->
 <div class="modal" id="pinModal">
   <div class="panel">
-    <h2><span class="rec-dot"></span>Yönetici Girişi</h2>
-    <p class="desc">Video yükleme paneli sadece sana açık. Şifreni gir.</p>
+    <h2><span class="rec-dot"></span>Admin Access</h2>
+    <p class="desc">This area is admin-only. Enter your PIN.</p>
     <div class="field">
       <input class="pin-input" id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="••••" autocomplete="off">
-      <div class="err" id="pinErr">Şifre yanlış.</div>
+      <div class="err" id="pinErr">Wrong PIN.</div>
     </div>
     <div class="panel-actions">
-      <button class="btn" id="pinCancel">Vazgeç</button>
-      <button class="btn primary" id="pinOk">Giriş</button>
+      <button class="btn" id="pinCancel">Cancel</button>
+      <button class="btn primary" id="pinOk">Enter</button>
     </div>
   </div>
 </div>
 
-<!-- yükleme paneli -->
+<!-- upload panel -->
 <div class="modal" id="uploadModal">
   <div class="panel">
-    <h2><span class="rec-dot"></span>Video Yükle</h2>
-    <p class="desc">Seçtiğin videolar repodaki <b>videos/</b> klasörüne kaydedilir ve listede otomatik görünür.</p>
+    <h2><span class="rec-dot"></span>Upload Video</h2>
+    <p class="desc">Selected videos are saved to the <b>videos/</b> folder in the repo and appear in the list automatically.</p>
 
     <div class="field" id="tokenField">
-      <label>GitHub Token (bir kez girilir, bu tarayıcıda saklanır)</label>
-      <input id="tokenInput" type="password" placeholder="ghp_... veya github_pat_..." autocomplete="off">
+      <label>GitHub Token (entered once, stored in this browser)</label>
+      <input id="tokenInput" type="password" placeholder="ghp_... or github_pat_..." autocomplete="off">
       <div class="hint">
         GitHub → Settings → Developer settings → <b>Personal access tokens (Fine-grained)</b> →
-        sadece bu repoyu seç, izin olarak <b>Contents: Read and write</b> ver. Token'ı kimseyle paylaşma.
+        select only this repo, grant <b>Contents: Read and write</b>. Never share the token with anyone.
       </div>
     </div>
 
     <div class="drop" id="dropZone">
       <div class="big-ico">🎬</div>
-      Videoları buraya sürükle veya <b>tıklayıp seç</b><br>
-      <span style="font-size:12px">mp4 / webm · dosya başına en fazla ~95 MB</span>
+      Drag videos here or <b>click to browse</b><br>
+      <span style="font-size:12px">mp4 / webm · max ~95 MB per file (GitHub limit)</span>
     </div>
     <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime" multiple hidden>
 
@@ -289,31 +330,82 @@ footer{
     <div class="err" id="upErr"></div>
 
     <div class="panel-actions">
-      <button class="btn" id="tokenForget">Token'ı unut</button>
-      <button class="btn" id="uploadClose">Kapat</button>
-      <button class="btn primary" id="uploadStart" disabled>Yüklemeyi başlat</button>
+      <button class="btn" id="tokenForget">Forget token</button>
+      <button class="btn" id="uploadClose">Close</button>
+      <button class="btn primary" id="uploadStart" disabled>Start upload</button>
     </div>
   </div>
 </div>
 
-<div class="toast" id="toast">Link kopyalandı</div>
+<!-- trim panel -->
+<div class="modal" id="trimModal">
+  <div class="panel wide">
+    <h2><span class="rec-dot"></span>Trim Video</h2>
+    <p class="desc" id="trimDesc"></p>
+
+    <video class="trim-video" id="trimVideo" controls playsinline></video>
+
+    <div class="trim-row">
+      <div class="trim-col">
+        <label class="hint" style="margin-bottom:6px;display:block">Start</label>
+        <div class="time-line">
+          <input id="trimStart" type="text" inputmode="numeric" value="0:00" autocomplete="off">
+          <button class="mini-btn" id="setStart">Now ⏱</button>
+        </div>
+      </div>
+      <div class="trim-col">
+        <label class="hint" style="margin-bottom:6px;display:block">End</label>
+        <div class="time-line">
+          <input id="trimEnd" type="text" inputmode="numeric" value="0:00" autocomplete="off">
+          <button class="mini-btn" id="setEnd">Now ⏱</button>
+        </div>
+      </div>
+    </div>
+    <div class="trim-len" id="trimLen"></div>
+
+    <div class="radio-row">
+      <label><input type="radio" name="trimMode" value="copy" id="modeCopy" checked> Save as a new file</label>
+      <div class="newname-field" id="newNameField">
+        <input id="trimNewName" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <label><input type="radio" name="trimMode" value="replace"> Overwrite the original (old version is lost)</label>
+    </div>
+
+    <label class="check-row">
+      <input type="checkbox" id="preciseCut">
+      Precise cut — frame-accurate but much slower (re-encodes the video)
+    </label>
+
+    <div class="trim-log" id="trimLog">Set the trim range, then hit "Trim &amp; upload".</div>
+
+    <div class="panel-actions">
+      <button class="btn" id="trimClose">Close</button>
+      <button class="btn primary" id="trimGo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
+        Trim &amp; upload
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Link copied</div>
 
 <script>
-/* ================= AYARLAR =================
-   Videolar reponun içindeki bu klasörde durur.
-   Sayfa GitHub Pages'te açılınca kullanıcı/repo
-   otomatik bulunur; local test için FALLBACK
-   değerlerini doldur.                          */
+/* ================= SETTINGS =================
+   Videos live in this folder inside the repo.
+   Owner/repo are auto-detected on GitHub Pages;
+   fill the FALLBACK values for local testing.  */
 const VIDEO_FOLDER = "videos";
-const FALLBACK_OWNER = "alpycens";     // github kullanıcı adın
-const FALLBACK_REPO  = "clips";        // repo adın
+const FALLBACK_OWNER = "alpycens";     // your github username
+const FALLBACK_REPO  = "clips";        // your repo name
 const BRANCH = "main";
-/* Yönetici şifresinin SHA-256 özeti (0623)     */
+/* SHA-256 hash of the admin PIN                */
 const PIN_HASH = "b5d8a55fb763ff8e61c885c836cbfdb97f9699b2eadac509be2a9c38b62f8857";
-/* =========================================== */
+/* ============================================ */
 
 const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
-const MAX_BYTES = 95 * 1024 * 1024; // API güvenli sınırı
+const MAX_BYTES = 95 * 1024 * 1024;
+const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
   const h = location.hostname, p = location.pathname.split("/").filter(Boolean);
@@ -330,45 +422,68 @@ const content = document.getElementById("content");
 const countChip = document.getElementById("countChip");
 const searchInput = document.getElementById("searchInput");
 const footer = document.getElementById("footer");
+const toast = document.getElementById("toast");
 let allVideos = [];
 
-/* ---------- yardımcılar ---------- */
+/* ---------- helpers ---------- */
 function fmtSize(b){
   if (b >= 1e9) return (b/1e9).toFixed(2)+" GB";
   if (b >= 1e6) return (b/1e6).toFixed(1)+" MB";
   return Math.round(b/1e3)+" KB";
 }
 function fmtDur(s){
-  if (!isFinite(s)) return "";
+  if (!isFinite(s) || s < 0) return "0:00";
   s = Math.round(s);
-  return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = String(s%60).padStart(2,"0");
+  return h ? h+":"+String(m).padStart(2,"0")+":"+sec : m+":"+sec;
+}
+function parseTime(t){
+  const parts = String(t).trim().split(":").map(x => parseFloat(x.replace(",",".")));
+  if (parts.some(isNaN)) return NaN;
+  return parts.reduce((acc,p) => acc*60+p, 0);
 }
 function niceName(f){ return f.replace(/\.[^.]+$/,"").replace(/[_-]+/g," ").trim(); }
 function showState(html){ content.innerHTML = '<div class="state">'+html+'</div>'; }
+function showToast(msg){
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 2200);
+}
 async function sha256(text){
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
 }
+function shareUrl(name){
+  const u = new URL(location.origin + location.pathname);
+  u.searchParams.set("v", name);
+  return u.toString();
+}
+async function copyShare(name){
+  try{
+    await navigator.clipboard.writeText(shareUrl(name));
+    showToast("Video link copied");
+  }catch(e){ prompt("Copy the link:", shareUrl(name)); }
+}
 
-/* ---------- listeleme ---------- */
+/* ---------- listing ---------- */
 async function load(){
-  showState('<div class="spinner"></div>Klipler yükleniyor...');
+  showState('<div class="spinner"></div>Loading clips...');
   try{
     const url = `https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&t=${Date.now()}`;
     const r = await fetch(url);
     if (r.status === 404) {
       allVideos = [];
-      countChip.textContent = "0 KLİP";
-      showState(`<div class="big">Henüz klip yok</div>
-        Sağ üstteki yükleme düğmesinden ilk videonu yükle,
-        <code>${VIDEO_FOLDER}/</code> klasörü otomatik oluşur.`);
+      countChip.textContent = "0 CLIPS";
+      showState(`<div class="big">No clips yet</div>
+        Upload your first video with the button in the top right —
+        the <code>${VIDEO_FOLDER}/</code> folder is created automatically.`);
       return;
     }
-    if (!r.ok) throw new Error("Liste alınamadı (hata "+r.status+")");
+    if (!r.ok) throw new Error("Couldn't fetch the list (error "+r.status+")");
     const items = await r.json();
     allVideos = items
       .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
-      .map(i => ({ name: i.name, size: i.size, src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name) }))
+      .map(i => ({ name: i.name, size: i.size, sha: i.sha, src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name) }))
       .sort((a,b) => b.name.localeCompare(a.name));
     render(allVideos);
     const v = new URLSearchParams(location.search).get("v");
@@ -377,26 +492,30 @@ async function load(){
       if (hit) openPlayer(hit);
     }
   }catch(e){
-    showState(`<div class="big">Yüklenemedi</div>${e.message}<br>Sayfayı yenilemeyi dene.`);
+    showState(`<div class="big">Couldn't load</div>${e.message}<br>Try refreshing the page.`);
   }
 }
 
 function render(list){
-  countChip.textContent = list.length + " KLİP";
+  countChip.textContent = list.length + (list.length === 1 ? " CLIP" : " CLIPS");
   if (!list.length){
-    showState(`<div class="big">Klip bulunamadı</div>Aramanla eşleşen video yok.`);
+    showState(`<div class="big">No clips found</div>No videos match your search.`);
     return;
   }
   const grid = document.createElement("div");
   grid.className = "grid";
   list.forEach(v => {
-    const card = document.createElement("button");
+    const card = document.createElement("div");
     card.className = "card";
+    card.tabIndex = 0;
     card.innerHTML = `
       <div class="thumb">
         <video preload="metadata" muted playsinline src="${v.src}#t=0.5"></video>
         <div class="play"><svg viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>
         <div class="dur"></div>
+        <button class="card-link" title="Copy video link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
+        </button>
       </div>
       <div class="meta">
         <div class="name">${niceName(v.name)}</div>
@@ -406,7 +525,12 @@ function render(list){
     vid.addEventListener("loadedmetadata", () => {
       card.querySelector(".dur").textContent = fmtDur(vid.duration);
     }, {once:true});
+    card.querySelector(".card-link").addEventListener("click", e => {
+      e.stopPropagation();
+      copyShare(v.name);
+    });
     card.addEventListener("click", () => openPlayer(v));
+    card.addEventListener("keydown", e => { if (e.key === "Enter") openPlayer(v); });
     grid.appendChild(card);
   });
   content.innerHTML = "";
@@ -418,13 +542,11 @@ searchInput.addEventListener("input", () => {
   render(allVideos.filter(v => v.name.toLowerCase().includes(q)));
 });
 
-/* ---------- oynatıcı ---------- */
+/* ---------- player ---------- */
 const playerModal = document.getElementById("playerModal");
 const modalVideo = document.getElementById("modalVideo");
 const modalTitle = document.getElementById("modalTitle");
-const copyBtn = document.getElementById("copyBtn");
 const dlBtn = document.getElementById("dlBtn");
-const toast = document.getElementById("toast");
 let current = null;
 
 function openPlayer(v){
@@ -451,48 +573,36 @@ function closePlayer(){
 document.getElementById("closeBtn").addEventListener("click", closePlayer);
 playerModal.addEventListener("click", e => { if (e.target === playerModal) closePlayer(); });
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape") { closePlayer(); closePin(); closeUpload(); }
+  if (e.key === "Escape") { closePlayer(); closePin(); closeUpload(); closeTrim(); }
+});
+document.getElementById("copyBtn").addEventListener("click", () => {
+  if (current) copyShare(current.name);
 });
 
-copyBtn.addEventListener("click", async () => {
-  if (!current) return;
-  const u = new URL(location.origin + location.pathname);
-  u.searchParams.set("v", current.name);
-  try{
-    await navigator.clipboard.writeText(u.toString());
-    showToast("Link kopyalandı");
-  }catch(e){ prompt("Linki kopyala:", u.toString()); }
-});
-
-function showToast(msg){
-  toast.textContent = msg;
-  toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 2200);
-}
-
-/* ---------- şifre ---------- */
+/* ---------- PIN ---------- */
 const pinModal = document.getElementById("pinModal");
 const pinInput = document.getElementById("pinInput");
 const pinErr = document.getElementById("pinErr");
 let unlocked = sessionStorage.getItem("clipAdmin") === "1";
+let afterUnlock = null;
 
-document.getElementById("uploadOpenBtn").addEventListener("click", () => {
-  if (unlocked) { openUpload(); return; }
+function askPin(then){
+  if (unlocked) { then(); return; }
+  afterUnlock = then;
   pinInput.value = "";
   pinErr.classList.remove("show");
   pinModal.classList.add("open");
   setTimeout(() => pinInput.focus(), 50);
-});
-document.getElementById("pinCancel").addEventListener("click", closePin);
+}
 function closePin(){ pinModal.classList.remove("open"); }
-
+document.getElementById("pinCancel").addEventListener("click", closePin);
 async function tryPin(){
   const h = await sha256(pinInput.value.trim());
   if (h === PIN_HASH) {
     unlocked = true;
     sessionStorage.setItem("clipAdmin","1");
     closePin();
-    openUpload();
+    if (afterUnlock) { afterUnlock(); afterUnlock = null; }
   } else {
     pinErr.classList.add("show");
     pinInput.value = "";
@@ -503,7 +613,39 @@ document.getElementById("pinOk").addEventListener("click", tryPin);
 pinInput.addEventListener("keydown", e => { if (e.key === "Enter") tryPin(); });
 pinModal.addEventListener("click", e => { if (e.target === pinModal) closePin(); });
 
-/* ---------- yükleme ---------- */
+document.getElementById("uploadOpenBtn").addEventListener("click", () => askPin(openUpload));
+
+/* ---------- GitHub API helpers ---------- */
+function getToken(){ return localStorage.getItem("ghToken") || ""; }
+
+async function ghPut(path, b64, message, sha){
+  const body = { message, content: b64, branch: BRANCH };
+  if (sha) body.sha = sha;
+  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, {
+    method: "PUT",
+    headers: {
+      "Authorization": "Bearer " + getToken(),
+      "Accept": "application/vnd.github+json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  if (r.status === 401 || r.status === 403) throw new Error("Token is invalid or lacks permission");
+  if (r.status === 422) throw new Error("A file with this name already exists");
+  if (!r.ok) throw new Error("GitHub error " + r.status);
+  return r.json();
+}
+
+function blobToBase64(blob){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.slice(r.result.indexOf(",") + 1));
+    r.onerror = () => rej(new Error("Couldn't read the file"));
+    r.readAsDataURL(blob);
+  });
+}
+
+/* ---------- upload ---------- */
 const uploadModal = document.getElementById("uploadModal");
 const tokenInput = document.getElementById("tokenInput");
 const tokenField = document.getElementById("tokenField");
@@ -515,7 +657,7 @@ const uploadStart = document.getElementById("uploadStart");
 let queue = [];
 
 function openUpload(){
-  const saved = localStorage.getItem("ghToken") || "";
+  const saved = getToken();
   tokenInput.value = saved;
   tokenField.style.display = saved ? "none" : "";
   queue = [];
@@ -532,7 +674,7 @@ document.getElementById("tokenForget").addEventListener("click", () => {
   localStorage.removeItem("ghToken");
   tokenInput.value = "";
   tokenField.style.display = "";
-  showToast("Token silindi");
+  showToast("Token removed");
 });
 
 dropZone.addEventListener("click", () => fileInput.click());
@@ -549,10 +691,10 @@ function addFiles(files){
   upErr.classList.remove("show");
   for (const f of files){
     if (!VIDEO_EXT.some(e => f.name.toLowerCase().endsWith(e))) {
-      showErr(`"${f.name}" video dosyası değil, atlandı.`); continue;
+      showUpErr(`"${f.name}" is not a video file, skipped.`); continue;
     }
     if (f.size > MAX_BYTES) {
-      showErr(`"${f.name}" ${fmtSize(f.size)} — 95 MB sınırını aşıyor. HandBrake ile sıkıştırıp tekrar dene.`); continue;
+      showUpErr(`"${f.name}" is ${fmtSize(f.size)} — over the 95 MB GitHub limit. Compress it first (e.g. HandBrake).`); continue;
     }
     if (queue.some(q => q.file.name === f.name)) continue;
     const item = document.createElement("div");
@@ -568,27 +710,14 @@ function addFiles(files){
   }
   uploadStart.disabled = queue.length === 0;
 }
-function showErr(msg){
+function showUpErr(msg){
   upErr.textContent = msg;
   upErr.classList.add("show");
 }
 
-function fileToBase64(file, onProgress){
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => {
-      // "data:...;base64," kısmını at
-      res(r.result.slice(r.result.indexOf(",") + 1));
-    };
-    r.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total * 30); };
-    r.onerror = () => rej(new Error("Dosya okunamadı"));
-    r.readAsDataURL(file);
-  });
-}
-
 uploadStart.addEventListener("click", async () => {
   const token = tokenInput.value.trim();
-  if (!token) { showErr("Önce GitHub token'ını gir."); tokenField.style.display = ""; return; }
+  if (!token) { showUpErr("Enter your GitHub token first."); tokenField.style.display = ""; return; }
   localStorage.setItem("ghToken", token);
   tokenField.style.display = "none";
   uploadStart.disabled = true;
@@ -599,32 +728,16 @@ uploadStart.addEventListener("click", async () => {
     const status = q.el.querySelector(".status");
     const bar = q.el.querySelector(".bar i");
     if (status.classList.contains("ok")) { okCount++; continue; }
-    status.textContent = "Hazırlanıyor...";
+    status.textContent = "Preparing...";
     status.className = "status";
     try{
-      const b64 = await fileToBase64(q.file, p => bar.style.width = p + "%");
+      const b64 = await blobToBase64(q.file);
       bar.style.width = "40%";
-      status.textContent = "Yükleniyor...";
+      status.textContent = "Uploading...";
       const safeName = q.file.name.replace(/[^\w.\-() ]+/g, "_");
-      const path = `${VIDEO_FOLDER}/${safeName}`;
-      const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`, {
-        method: "PUT",
-        headers: {
-          "Authorization": "Bearer " + token,
-          "Accept": "application/vnd.github+json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          message: "Klip yüklendi: " + safeName,
-          content: b64,
-          branch: BRANCH
-        })
-      });
-      if (r.status === 401 || r.status === 403) throw new Error("Token geçersiz veya yetkisiz");
-      if (r.status === 422) throw new Error("Aynı isimde dosya zaten var");
-      if (!r.ok) throw new Error("Hata " + r.status);
+      await ghPut(`${VIDEO_FOLDER}/${safeName}`, b64, "Upload clip: " + safeName);
       bar.style.width = "100%";
-      status.textContent = "Tamamlandı ✓";
+      status.textContent = "Done ✓";
       status.className = "status ok";
       okCount++;
     }catch(e){
@@ -636,14 +749,177 @@ uploadStart.addEventListener("click", async () => {
 
   uploadStart.disabled = false;
   if (okCount === queue.length && okCount > 0){
-    showToast(okCount + " video yüklendi");
+    showToast(okCount + (okCount === 1 ? " video uploaded" : " videos uploaded"));
     setTimeout(() => { closeUpload(); load(); }, 900);
   } else {
     load();
   }
 });
 
-footer.textContent = `${owner}/${repo} · ${VIDEO_FOLDER}/ klasöründen otomatik listelenir`;
+/* ---------- trim (ffmpeg.wasm) ---------- */
+const trimModal = document.getElementById("trimModal");
+const trimVideo = document.getElementById("trimVideo");
+const trimDesc = document.getElementById("trimDesc");
+const trimStart = document.getElementById("trimStart");
+const trimEnd = document.getElementById("trimEnd");
+const trimLenEl = document.getElementById("trimLen");
+const trimNewName = document.getElementById("trimNewName");
+const trimLog = document.getElementById("trimLog");
+const trimGo = document.getElementById("trimGo");
+const preciseCut = document.getElementById("preciseCut");
+let trimTarget = null;
+let ffmpeg = null;
+
+document.getElementById("trimOpenBtn").addEventListener("click", () => {
+  if (!current) return;
+  const target = current;
+  askPin(() => openTrim(target));
+});
+
+function openTrim(v){
+  trimTarget = v;
+  closePlayer();
+  trimVideo.src = v.src;
+  trimDesc.textContent = v.name + " · " + fmtSize(v.size);
+  trimStart.value = "0:00";
+  trimEnd.value = "0:00";
+  trimVideo.addEventListener("loadedmetadata", () => {
+    trimEnd.value = fmtDur(trimVideo.duration);
+    updateLen();
+  }, {once:true});
+  const base = v.name.replace(/\.[^.]+$/,"");
+  const ext = (v.name.match(/\.[^.]+$/) || [".mp4"])[0];
+  trimNewName.value = base + "_trimmed" + ext;
+  setLog('Set the trim range, then hit "Trim & upload".');
+  trimGo.disabled = false;
+  trimModal.classList.add("open");
+}
+function closeTrim(){
+  trimModal.classList.remove("open");
+  trimVideo.pause();
+  trimVideo.removeAttribute("src");
+  trimVideo.load();
+}
+document.getElementById("trimClose").addEventListener("click", closeTrim);
+
+function setLog(msg, cls){
+  trimLog.textContent = msg;
+  trimLog.className = "trim-log" + (cls ? " " + cls : "");
+}
+function updateLen(){
+  const s = parseTime(trimStart.value), e = parseTime(trimEnd.value);
+  if (isNaN(s) || isNaN(e) || e <= s) { trimLenEl.textContent = "Invalid range"; return; }
+  trimLenEl.textContent = "Clip length: " + fmtDur(e - s) + "  (" + fmtDur(s) + " → " + fmtDur(e) + ")";
+}
+trimStart.addEventListener("input", updateLen);
+trimEnd.addEventListener("input", updateLen);
+document.getElementById("setStart").addEventListener("click", () => {
+  trimStart.value = fmtDur(trimVideo.currentTime); updateLen();
+});
+document.getElementById("setEnd").addEventListener("click", () => {
+  trimEnd.value = fmtDur(trimVideo.currentTime); updateLen();
+});
+document.querySelectorAll('input[name="trimMode"]').forEach(r => {
+  r.addEventListener("change", () => {
+    document.getElementById("newNameField").style.display =
+      document.getElementById("modeCopy").checked ? "" : "none";
+  });
+});
+
+function loadScript(src){
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = res;
+    s.onerror = () => rej(new Error("Couldn't download the trim engine"));
+    document.head.appendChild(s);
+  });
+}
+
+async function getFFmpeg(onProgress){
+  if (ffmpeg) return ffmpeg;
+  setLog("Downloading trim engine (~32 MB first time, instant afterwards)...");
+  await loadScript(`https://unpkg.com/@ffmpeg/ffmpeg@${FF_VER}/dist/umd/ffmpeg.js`);
+  await loadScript(`https://unpkg.com/@ffmpeg/util@${FF_UTIL_VER}/dist/umd/index.js`);
+  const { FFmpeg } = FFmpegWASM;
+  const { toBlobURL } = FFmpegUtil;
+  const base = `https://unpkg.com/@ffmpeg/core@${FF_CORE_VER}/dist/umd`;
+  const ff = new FFmpeg();
+  ff.on("progress", ({progress}) => onProgress && onProgress(progress));
+  await ff.load({
+    coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+    classWorkerURL: await toBlobURL(`https://unpkg.com/@ffmpeg/ffmpeg@${FF_VER}/dist/umd/814.ffmpeg.js`, "text/javascript"),
+  });
+  ffmpeg = ff;
+  return ff;
+}
+
+trimGo.addEventListener("click", async () => {
+  if (!trimTarget) return;
+  if (!getToken()) { setLog("Save your GitHub token in the upload panel first.", "fail"); return; }
+
+  const s = parseTime(trimStart.value), e = parseTime(trimEnd.value);
+  if (isNaN(s) || isNaN(e) || e <= s) { setLog("Invalid time range. Example format: 1:23", "fail"); return; }
+
+  const replace = !document.getElementById("modeCopy").checked;
+  const ext = (trimTarget.name.match(/\.[^.]+$/) || [".mp4"])[0];
+  let outName = replace
+    ? trimTarget.name
+    : (trimNewName.value.trim() || "trimmed" + ext).replace(/[^\w.\-() ]+/g, "_");
+  if (!VIDEO_EXT.some(x => outName.toLowerCase().endsWith(x))) outName += ext;
+  if (!replace && allVideos.some(v => v.name === outName)) {
+    setLog(`"${outName}" already exists, pick another name.`, "fail"); return;
+  }
+
+  trimGo.disabled = true;
+  try{
+    const ff = await getFFmpeg(p => {
+      if (p > 0 && p <= 1) setLog("Trimming... " + Math.round(p * 100) + "%");
+    });
+
+    setLog("Fetching the source video...");
+    const srcRes = await fetch(trimTarget.src);
+    if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
+    const srcData = new Uint8Array(await srcRes.arrayBuffer());
+
+    const inFile = "in" + ext, outFile = "out" + ext;
+    await ff.writeFile(inFile, srcData);
+
+    setLog("Trimming...");
+    const args = preciseCut.checked
+      ? ["-i", inFile, "-ss", String(s), "-to", String(e),
+         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-c:a", "aac", outFile]
+      : ["-ss", String(s), "-to", String(e), "-i", inFile,
+         "-c", "copy", "-avoid_negative_ts", "make_zero", outFile];
+    await ff.exec(args);
+
+    const outData = await ff.readFile(outFile);
+    await ff.deleteFile(inFile).catch(()=>{});
+    await ff.deleteFile(outFile).catch(()=>{});
+    const blob = new Blob([outData.buffer], {type: "video/mp4"});
+    if (blob.size < 1000) throw new Error("Trim failed — check the time range");
+    if (blob.size > MAX_BYTES) throw new Error("Even the trimmed clip exceeds 95 MB");
+
+    setLog("Uploading... (" + fmtSize(blob.size) + ")");
+    const b64 = await blobToBase64(blob);
+    if (replace) {
+      await ghPut(`${VIDEO_FOLDER}/${outName}`, b64, "Trim clip: " + outName, trimTarget.sha);
+    } else {
+      await ghPut(`${VIDEO_FOLDER}/${outName}`, b64, "Trimmed clip: " + outName);
+    }
+
+    setLog("Done ✓ " + outName + " uploaded. It may take a minute before it plays.", "ok");
+    showToast("Trimmed video uploaded");
+    setTimeout(() => { closeTrim(); load(); }, 1600);
+  }catch(err){
+    setLog("Error: " + err.message, "fail");
+  }finally{
+    trimGo.disabled = false;
+  }
+});
+
+footer.textContent = `${owner}/${repo} · auto-listed from the ${VIDEO_FOLDER}/ folder`;
 load();
 </script>
 </body>

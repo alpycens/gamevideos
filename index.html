@@ -322,7 +322,7 @@ footer{
     <div class="drop" id="dropZone">
       <div class="big-ico">🎬</div>
       Drag videos here or <b>click to browse</b><br>
-      <span style="font-size:12px">mp4 / webm · max ~95 MB per file (GitHub limit)</span>
+      <span style="font-size:12px">mp4 / webm · up to 2 GB per file</span>
     </div>
     <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime" multiple hidden>
 
@@ -399,12 +399,13 @@ const VIDEO_FOLDER = "videos";
 const FALLBACK_OWNER = "alpycens";     // your github username
 const FALLBACK_REPO  = "clips";        // your repo name
 const BRANCH = "main";
+const RELEASE_TAG = "clips";           // uploads are stored as assets of this release
 /* SHA-256 hash of the admin PIN                */
 const PIN_HASH = "b5d8a55fb763ff8e61c885c836cbfdb97f9699b2eadac509be2a9c38b62f8857";
 /* ============================================ */
 
 const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
-const MAX_BYTES = 95 * 1024 * 1024;
+const MAX_BYTES = 1900 * 1024 * 1024;  // release asset limit is 2 GB
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
@@ -469,22 +470,43 @@ async function copyShare(name){
 async function load(){
   showState('<div class="spinner"></div>Loading clips...');
   try{
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&t=${Date.now()}`;
-    const r = await fetch(url);
-    if (r.status === 404) {
-      allVideos = [];
+    const bust = "t=" + Date.now();
+    const [folderRes, relRes] = await Promise.all([
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&${bust}`),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`)
+    ]);
+
+    const vids = [];
+    if (folderRes.ok) {
+      const items = await folderRes.json();
+      items
+        .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
+        .forEach(i => vids.push({
+          name: i.name, size: i.size, sha: i.sha,
+          src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name)
+        }));
+    }
+    if (relRes.ok) {
+      const rel = await relRes.json();
+      (rel.assets || [])
+        .filter(a => VIDEO_EXT.some(e => a.name.toLowerCase().endsWith(e)))
+        .forEach(a => vids.push({
+          name: a.name, size: a.size, assetId: a.id,
+          src: a.browser_download_url,
+          apiUrl: a.url
+        }));
+    }
+    if (!folderRes.ok && !relRes.ok && folderRes.status !== 404 && relRes.status !== 404) {
+      throw new Error("Couldn't fetch the list (error " + folderRes.status + ")");
+    }
+
+    allVideos = vids.sort((a,b) => b.name.localeCompare(a.name));
+    if (!allVideos.length) {
       countChip.textContent = "0 CLIPS";
       showState(`<div class="big">No clips yet</div>
-        Upload your first video with the button in the top right —
-        the <code>${VIDEO_FOLDER}/</code> folder is created automatically.`);
+        Upload your first video with the button in the top right.`);
       return;
     }
-    if (!r.ok) throw new Error("Couldn't fetch the list (error "+r.status+")");
-    const items = await r.json();
-    allVideos = items
-      .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
-      .map(i => ({ name: i.name, size: i.size, sha: i.sha, src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name) }))
-      .sort((a,b) => b.name.localeCompare(a.name));
     render(allVideos);
     const v = new URLSearchParams(location.search).get("v");
     if (v) {
@@ -633,8 +655,8 @@ async function ghJson(url, opts, step){
   return r.json();
 }
 
-/* Commits a file via the Git Database API — reliable for large files
-   (the simpler Contents API throws 500 on files over ~50 MB). */
+/* Commits a file via the Git Database API — used only when overwriting
+   a video that lives in the videos/ folder of the repo. */
 async function ghCommitFile(path, b64, message){
   const H = ghHeaders();
   // 1) upload content as a blob
@@ -679,6 +701,60 @@ function blobToBase64(blob){
     r.onerror = () => rej(new Error("Couldn't read the file"));
     r.readAsDataURL(blob);
   });
+}
+
+/* ---------- release helpers (video storage, up to 2 GB per file) ---------- */
+let releaseIdCache = null;
+
+async function ensureRelease(){
+  if (releaseIdCache) return releaseIdCache;
+  const H = ghHeaders();
+  const r = await fetch(GH_API + "/releases/tags/" + RELEASE_TAG, { headers: H });
+  if (r.ok) {
+    releaseIdCache = (await r.json()).id;
+    return releaseIdCache;
+  }
+  if (r.status !== 404) throw new Error("Release lookup failed (GitHub error " + r.status + ")");
+  const created = await ghJson(GH_API + "/releases", {
+    method: "POST", headers: H,
+    body: JSON.stringify({
+      tag_name: RELEASE_TAG,
+      name: "Clips",
+      body: "Video storage for the clip archive. Managed automatically — don't delete.",
+      make_latest: "false"
+    })
+  }, "Release creation");
+  releaseIdCache = created.id;
+  return releaseIdCache;
+}
+
+function uploadAsset(releaseId, file, name, onProgress){
+  return new Promise((res, rej) => {
+    const xhr = new XMLHttpRequest();
+    const url = `https://uploads.github.com/repos/${owner}/${repo}/releases/${releaseId}/assets?name=${encodeURIComponent(name)}`;
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", "Bearer " + getToken());
+    xhr.setRequestHeader("Accept", "application/vnd.github+json");
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) res(JSON.parse(xhr.responseText));
+      else if (xhr.status === 401 || xhr.status === 403) rej(new Error("Token is invalid or lacks permission"));
+      else if (xhr.status === 422) rej(new Error("A file with this name already exists"));
+      else rej(new Error("Upload failed (GitHub error " + xhr.status + ")"));
+    };
+    xhr.onerror = () => rej(new Error("Network error during upload"));
+    xhr.send(file);
+  });
+}
+
+async function deleteAsset(assetId){
+  const r = await fetch(GH_API + "/releases/assets/" + assetId, {
+    method: "DELETE", headers: ghHeaders()
+  });
+  if (!r.ok && r.status !== 404) throw new Error("Couldn't remove the old version (GitHub error " + r.status + ")");
 }
 
 /* ---------- upload ---------- */
@@ -730,7 +806,7 @@ function addFiles(files){
       showUpErr(`"${f.name}" is not a video file, skipped.`); continue;
     }
     if (f.size > MAX_BYTES) {
-      showUpErr(`"${f.name}" is ${fmtSize(f.size)} — over the 95 MB GitHub limit. Compress it first (e.g. HandBrake).`); continue;
+      showUpErr(`"${f.name}" is ${fmtSize(f.size)} — over the 2 GB per-file limit.`); continue;
     }
     if (queue.some(q => q.file.name === f.name)) continue;
     const item = document.createElement("div");
@@ -760,18 +836,29 @@ uploadStart.addEventListener("click", async () => {
   upErr.classList.remove("show");
   let okCount = 0;
 
+  let releaseId;
+  try {
+    releaseId = await ensureRelease();
+  } catch(e) {
+    showUpErr(e.message);
+    uploadStart.disabled = false;
+    return;
+  }
+
   for (const q of queue){
     const status = q.el.querySelector(".status");
     const bar = q.el.querySelector(".bar i");
     if (status.classList.contains("ok")) { okCount++; continue; }
-    status.textContent = "Preparing...";
     status.className = "status";
     try{
-      const b64 = await blobToBase64(q.file);
-      bar.style.width = "40%";
-      status.textContent = "Uploading...";
       const safeName = q.file.name.replace(/[^\w.\-() ]+/g, "_");
-      await ghCommitFile(`${VIDEO_FOLDER}/${safeName}`, b64, "Upload clip: " + safeName);
+      if (allVideos.some(v => v.name === safeName)) throw new Error("A file with this name already exists");
+      status.textContent = "Uploading... 0%";
+      await uploadAsset(releaseId, q.file, safeName, p => {
+        const pct = Math.round(p * 100);
+        bar.style.width = pct + "%";
+        status.textContent = "Uploading... " + pct + "%";
+      });
       bar.style.width = "100%";
       status.textContent = "Done ✓";
       status.className = "status ok";
@@ -915,7 +1002,13 @@ trimGo.addEventListener("click", async () => {
     });
 
     setLog("Fetching the source video...");
-    const srcRes = await fetch(trimTarget.src);
+    let srcRes;
+    if (trimTarget.apiUrl) {
+      // release asset: fetch through the API (CORS-safe, follows redirect to storage)
+      srcRes = await fetch(trimTarget.apiUrl, { headers: { "Accept": "application/octet-stream" } });
+    } else {
+      srcRes = await fetch(trimTarget.src);
+    }
     if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
     const srcData = new Uint8Array(await srcRes.arrayBuffer());
 
@@ -935,14 +1028,30 @@ trimGo.addEventListener("click", async () => {
     await ff.deleteFile(outFile).catch(()=>{});
     const blob = new Blob([outData.buffer], {type: "video/mp4"});
     if (blob.size < 1000) throw new Error("Trim failed — check the time range");
-    if (blob.size > MAX_BYTES) throw new Error("Even the trimmed clip exceeds 95 MB");
+    if (blob.size > MAX_BYTES) throw new Error("The trimmed clip exceeds the 2 GB limit");
 
-    setLog("Uploading... (" + fmtSize(blob.size) + ")");
-    const b64 = await blobToBase64(blob);
-    await ghCommitFile(`${VIDEO_FOLDER}/${outName}`, b64,
-      (replace ? "Trim clip: " : "Trimmed clip: ") + outName);
+    const releaseId = await ensureRelease();
+    if (replace) {
+      if (trimTarget.assetId) {
+        // release asset: remove old version, then upload the new one
+        setLog("Removing the old version...");
+        await deleteAsset(trimTarget.assetId);
+        setLog("Uploading... 0%");
+        await uploadAsset(releaseId, blob, outName, p =>
+          setLog("Uploading... " + Math.round(p * 100) + "%"));
+      } else {
+        // repo-folder video: overwrite via a commit
+        setLog("Uploading... (" + fmtSize(blob.size) + ")");
+        const b64 = await blobToBase64(blob);
+        await ghCommitFile(`${VIDEO_FOLDER}/${outName}`, b64, "Trim clip: " + outName);
+      }
+    } else {
+      setLog("Uploading... 0%");
+      await uploadAsset(releaseId, blob, outName, p =>
+        setLog("Uploading... " + Math.round(p * 100) + "%"));
+    }
 
-    setLog("Done ✓ " + outName + " uploaded. It may take a minute before it plays.", "ok");
+    setLog("Done ✓ " + outName + " uploaded.", "ok");
     showToast("Trimmed video uploaded");
     setTimeout(() => { closeTrim(); load(); }, 1600);
   }catch(err){
@@ -952,7 +1061,7 @@ trimGo.addEventListener("click", async () => {
   }
 });
 
-footer.textContent = `${owner}/${repo} · auto-listed from the ${VIDEO_FOLDER}/ folder`;
+footer.textContent = `${owner}/${repo} · clips are stored as release assets`;
 load();
 </script>
 </body>

@@ -360,7 +360,7 @@ body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
 <div class="modal" id="uploadModal">
   <div class="panel">
     <h2><span class="rec-dot"></span>Upload Video</h2>
-    <p class="desc">Videos upload here and play on every device. Note: files added via GitHub's release page <b>don't play on phones</b> — bring big videos in through <b>✂ Trim / Fit for phone</b> instead.</p>
+    <p class="desc">Small clips (≤40 MB) upload right here. For everything else, use the <b>YouTube section below</b> — no size limit, plays on every device.</p>
 
     <div class="field" id="tokenField">
       <label>GitHub Token (entered once, stored in this browser)</label>
@@ -380,7 +380,7 @@ body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
     <div class="drop" id="dropZone">
       <div class="big-ico">🎬</div>
       Drag videos here or <b>click to browse</b><br>
-      <span style="font-size:12px">mp4 / webm · up to 40 MB in-app · bigger: ✂ Trim or the GitHub page</span>
+      <span style="font-size:12px">mp4 / webm · up to 40 MB · bigger videos: add via YouTube below</span>
     </div>
     <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime" multiple hidden>
 
@@ -399,10 +399,6 @@ body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
 
     <div class="panel-actions">
       <button class="btn" id="makeThumbsBtn">Make thumbnails</button>
-      <button class="btn" id="bigUploadBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
-        Big files (2 GB) →
-      </button>
       <button class="btn" id="tokenForget">Forget token</button>
       <button class="btn" id="uploadClose">Close</button>
       <button class="btn primary" id="uploadStart" disabled>Start upload</button>
@@ -1266,39 +1262,6 @@ async function ghUploadVideo(path, blob, message, onProgress){
   await ghCommitBlob(path, blobSha, message);
 }
 
-/* ---------- big files: GitHub release page (up to 2 GB per file) ---------- */
-async function ensureRelease(){
-  const H = ghHeaders();
-  const r = await fetch(GH_API + "/releases/tags/" + RELEASE_TAG, { headers: H });
-  if (r.ok) return;
-  if (r.status !== 404) throw new Error("Release lookup failed (GitHub error " + r.status + ")");
-  await ghJson(GH_API + "/releases", {
-    method: "POST", headers: H,
-    body: JSON.stringify({
-      tag_name: RELEASE_TAG,
-      name: "Clips",
-      body: "Video storage for the clip archive. Managed by the site — don't delete.",
-      make_latest: "false"
-    })
-  }, "Release creation");
-}
-
-document.getElementById("bigUploadBtn").addEventListener("click", async () => {
-  if (!getToken()) { showUpErr("Enter and save your GitHub token first."); tokenField.style.display = ""; return; }
-  const btn = document.getElementById("bigUploadBtn");
-  btn.disabled = true;
-  try {
-    await ensureRelease();
-    window.open(`https://github.com/${owner}/${repo}/releases/edit/${RELEASE_TAG}`, "_blank");
-    upErr.classList.remove("show");
-    showToast("Drag your video onto the GitHub page, then Update release");
-  } catch(e) {
-    showUpErr(e.message);
-  } finally {
-    btn.disabled = false;
-  }
-});
-
 function parseYtId(url){
   const m = String(url).match(
     /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([\w-]{11})/
@@ -1455,7 +1418,7 @@ function addFiles(files){
       <div class="row">
         <span class="fname">${f.name}</span>
         <button class="mini-btn trim-local" style="padding:4px 10px" title="Trim before uploading">✂ Trim</button>
-        <span class="status${tooBig ? " warn" : ""}">${tooBig ? fmtSize(f.size) + " — too big: ✂ Trim it, or use Big files →" : fmtSize(f.size)}</span>
+        <span class="status${tooBig ? " warn" : ""}">${tooBig ? fmtSize(f.size) + " — too big: ✂ Trim it, or add it via YouTube below" : fmtSize(f.size)}</span>
       </div>
       <div class="bar"><i></i></div>`;
     upList.appendChild(item);
@@ -1878,8 +1841,8 @@ splitBtn.addEventListener("click", async () => {
     await saveCategories(doneNames).catch(()=>{});
 
     setLog(single
-      ? `Done ✓ ${partName(1)} uploaded — plays on phones. You can delete the original from GitHub's release page.`
-      : `Done ✓ ${nParts} parts uploaded — they play on phones. You can delete the big original from GitHub's release page.`, "ok");
+      ? `Done ✓ ${partName(1)} uploaded — plays on phones.`
+      : `Done ✓ ${nParts} parts uploaded — they play on phones.`, "ok");
     showToast(single ? "Phone version uploaded" : nParts + " parts uploaded");
     if (trimLocalEntry) {
       trimLocalEntry.el.remove();

@@ -139,6 +139,20 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 }
 .modal.open{display:grid}
 .player-box{width:min(960px,100%)}
+.loadbar{
+  display:none;position:relative;height:22px;margin-top:10px;
+  background:var(--panel);border:1px solid var(--line);border-radius:99px;overflow:hidden;
+}
+.loadbar.show{display:block}
+.loadbar i{
+  display:block;height:100%;width:0;background:var(--amber);
+  border-radius:99px;transition:width .25s;
+}
+.loadbar span{
+  position:absolute;inset:0;display:grid;place-items:center;
+  font-family:'Chakra Petch',sans-serif;font-size:12px;letter-spacing:.06em;
+  color:var(--text);mix-blend-mode:difference;
+}
 .player-box video{
   width:100%;max-height:70vh;border-radius:var(--radius);background:#000;
   border:1px solid var(--line);display:block;
@@ -288,6 +302,7 @@ body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
 <div class="modal" id="playerModal">
   <div class="player-box">
     <video id="modalVideo" controls playsinline preload="auto"></video>
+    <div class="loadbar" id="loadBar"><i></i><span></span></div>
     <div id="ytWrap" style="display:none">
       <iframe id="ytFrame" allow="autoplay; encrypted-media; fullscreen" allowfullscreen
         style="width:100%;aspect-ratio:16/9;max-height:70vh;border:1px solid var(--line);border-radius:var(--radius);background:#000;display:block"></iframe>
@@ -470,6 +485,11 @@ const RELEASE_TAG = "clips";
 /* Release videos are streamed through sw.js (a service worker in this
    repo) which fixes the MIME type so phones play them in the player. */
 const SW_OK = "serviceWorker" in navigator;
+/* iPhones/iPads won't stream GitHub release files (wrong MIME type, and
+   Safari bypasses service workers for media) — on iOS we download the
+   file into the player with a progress bar, then play it. */
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
@@ -731,6 +751,60 @@ const dlBtn = document.getElementById("dlBtn");
 let current = null;
 
 let blobFallbackUrl = null;
+const blobCache = new Map();   // assetId -> object URL (watched videos replay instantly)
+
+const loadBar = document.getElementById("loadBar");
+function setLoadBar(pct){
+  if (pct === null) { loadBar.classList.remove("show"); return; }
+  loadBar.classList.add("show");
+  loadBar.querySelector("i").style.width = pct + "%";
+  loadBar.querySelector("span").textContent = "Loading " + pct + "%";
+}
+
+/* Downloads a release video into the player with a progress bar,
+   then plays it as a proper video blob. Cached per session. */
+async function playAssetBlob(v){
+  if (blobCache.has(v.assetId)) {
+    modalVideo.src = blobCache.get(v.assetId);
+    modalVideo.play().catch(()=>{});
+    return;
+  }
+  setLoadBar(0);
+  try {
+    const r = await fetch(v.apiUrl, { headers: { "Accept": "application/octet-stream" } });
+    if (!r.ok || !r.body) throw new Error();
+    const total = Number(r.headers.get("Content-Length")) || v.size || 0;
+    const reader = r.body.getReader();
+    const chunks = [];
+    let got = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      got += value.length;
+      if (total) setLoadBar(Math.min(99, Math.round(got / total * 100)));
+      if (current !== v) { reader.cancel().catch(()=>{}); setLoadBar(null); return; }
+    }
+    const url = URL.createObjectURL(new Blob(chunks, { type: "video/mp4" }));
+    // keep at most 3 videos in memory
+    if (blobCache.size >= 3) {
+      const oldest = blobCache.keys().next().value;
+      URL.revokeObjectURL(blobCache.get(oldest));
+      blobCache.delete(oldest);
+    }
+    blobCache.set(v.assetId, url);
+    setLoadBar(null);
+    if (current !== v) return;
+    modalVideo.src = url;
+    modalVideo.play().catch(()=>{});
+  } catch(e) {
+    setLoadBar(null);
+    if (current !== v) return;
+    // last resort: hand the direct URL to the player
+    modalVideo.src = v.src;
+    modalVideo.play().catch(()=>{});
+  }
+}
 
 function openPlayer(v){
   current = v;
@@ -750,11 +824,18 @@ function openPlayer(v){
     modalVideo.style.display = "";
     modalVideo.poster = v.thumb || "";
     modalVideo.dataset.fallbackTried = "";
-    modalVideo.src = v.src;
     modalTitle.textContent = niceName(v.name);
     dlBtn.href = v.src;
     dlBtn.setAttribute("download", v.name);
-    modalVideo.play().catch(()=>{});
+    setLoadBar(null);
+    if (v.assetId && IS_IOS) {
+      // iPhone + GitHub release file: download into the player, then play
+      modalVideo.removeAttribute("src");
+      playAssetBlob(v);
+    } else {
+      modalVideo.src = v.src;
+      modalVideo.play().catch(()=>{});
+    }
   }
   playerModal.classList.add("open");
   const u = new URL(location);
@@ -769,11 +850,10 @@ async function playerBlobFallback(){
   if (!current || modalVideo.dataset.fallbackTried) return;
   modalVideo.dataset.fallbackTried = "1";
   const v = current;
+  if (v.assetId) { playAssetBlob(v); return; }
   modalTitle.textContent = niceName(v.name) + " — loading...";
   try {
-    const url = v.apiUrl || v.src;
-    const opts = v.apiUrl ? { headers: { "Accept": "application/octet-stream" } } : {};
-    const r = await fetch(url, opts);
+    const r = await fetch(v.src);
     if (!r.ok) throw new Error();
     const raw = await r.blob();
     const typed = new Blob([raw], { type: "video/mp4" });
@@ -797,6 +877,7 @@ function closePlayer(){
   modalVideo.pause();
   modalVideo.removeAttribute("src");
   modalVideo.load();
+  setLoadBar(null);
   document.getElementById("ytFrame").src = "";
   const u = new URL(location);
   u.searchParams.delete("v");

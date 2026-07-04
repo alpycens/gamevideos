@@ -444,6 +444,11 @@ const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
    page (up to 2 GB per file) — those are listed automatically. */
 const UPLOAD_MAX = 40 * 1024 * 1024;
 const RELEASE_TAG = "clips";
+/* Optional: Cloudflare Worker URL that streams release videos with the
+   correct video MIME type (fixes iPhone playback for big files).
+   Example: "https://clips-proxy.yourname.workers.dev"
+   Leave empty to serve release files directly from GitHub. */
+const VIDEO_PROXY = "";
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
@@ -569,7 +574,10 @@ async function load(){
           if (vids.some(v => v.name === a.name)) return;
           vids.push({
             name: a.name, size: a.size, assetId: a.id,
-            src: a.browser_download_url, apiUrl: a.url
+            src: VIDEO_PROXY
+              ? VIDEO_PROXY.replace(/\/$/,"") + "/?u=" + encodeURIComponent(a.browser_download_url)
+              : a.browser_download_url,
+            apiUrl: a.url
           });
         });
     }

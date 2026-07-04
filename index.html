@@ -557,12 +557,25 @@ async function load(){
   showState('<div class="spinner"></div>Loading clips...');
   try{
     const bust = "t=" + Date.now();
+    // if the admin token is saved in this browser, use it — it raises
+    // GitHub's request limit from 60/hour to 5000/hour
+    const lh = getToken() ? { headers: { "Authorization": "Bearer " + getToken() } } : {};
     const [folderRes, relRes, catRes, thumbRes] = await Promise.all([
-      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&${bust}`),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/categories.json?ref=${BRANCH}&${bust}`),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/thumbs?ref=${BRANCH}&${bust}`)
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&${bust}`, lh),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`, lh),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/categories.json?ref=${BRANCH}&${bust}`, lh),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/thumbs?ref=${BRANCH}&${bust}`, lh)
     ]);
+
+    // hourly request limit hit → fall back to the last good view
+    if (folderRes.status === 403 && relRes.status === 403) {
+      if (renderFromCache()) return;
+      showState(`<div class="big">Taking a short break</div>
+        GitHub's hourly request limit was reached from this connection.
+        The clips are safe — refresh in a little while and they'll be back.`);
+      countChip.textContent = "—";
+      return;
+    }
 
     categories = {};
     durationsMap = {};
@@ -643,6 +656,10 @@ async function load(){
         Upload your first video with the button in the top right.`);
       return;
     }
+    // remember this view so the site keeps working if GitHub throttles us
+    try {
+      localStorage.setItem("clipCache", JSON.stringify({ t: Date.now(), videos: allVideos }));
+    } catch(e) {}
     applyFilters();
     const v = new URLSearchParams(location.search).get("v");
     if (v) {
@@ -650,8 +667,27 @@ async function load(){
       if (hit) openPlayer(hit);
     }
   }catch(e){
+    if (renderFromCache()) return;
     showState(`<div class="big">Couldn't load</div>${e.message}<br>Try refreshing the page.`);
   }
+}
+
+/* Shows the last successful listing when GitHub is unreachable/throttled. */
+function renderFromCache(){
+  try {
+    const c = JSON.parse(localStorage.getItem("clipCache") || "null");
+    if (!c || !Array.isArray(c.videos) || !c.videos.length) return false;
+    allVideos = c.videos;
+    renderCatBar();
+    applyFilters();
+    showToast("Showing a saved view — GitHub is busy, refresh later");
+    const v = new URLSearchParams(location.search).get("v");
+    if (v) {
+      const hit = allVideos.find(x => x.name === v);
+      if (hit) openPlayer(hit);
+    }
+    return true;
+  } catch(e) { return false; }
 }
 
 function render(list){

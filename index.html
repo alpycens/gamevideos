@@ -407,7 +407,7 @@ body.admin .admin-only{display:inline-flex !important}
 
     <label class="check-row">
       <input type="checkbox" id="preciseCut">
-      Precise cut — frame-accurate, and re-encodes for smooth streaming (slower, but fixes stuttery playback)
+      Precise cut — frame-accurate, re-encodes for smooth streaming and <b>phone playback</b> (slower)
     </label>
 
     <div class="trim-log" id="trimLog">Set the trim range, then hit "Trim &amp; upload".</div>
@@ -688,9 +688,12 @@ const modalTitle = document.getElementById("modalTitle");
 const dlBtn = document.getElementById("dlBtn");
 let current = null;
 
+let blobFallbackUrl = null;
+
 function openPlayer(v){
   current = v;
   modalVideo.poster = v.thumb || "";
+  modalVideo.dataset.fallbackTried = "";
   modalVideo.src = v.src;
   modalTitle.textContent = niceName(v.name);
   dlBtn.href = v.src;
@@ -701,6 +704,37 @@ function openPlayer(v){
   u.searchParams.set("v", v.name);
   history.replaceState(null,"",u);
 }
+
+/* Some phones (especially iPhones) refuse GitHub release files because they
+   aren't served with a video MIME type. If playback fails, fetch the file
+   and hand it to the player as a proper video blob. */
+async function playerBlobFallback(){
+  if (!current || modalVideo.dataset.fallbackTried) return;
+  modalVideo.dataset.fallbackTried = "1";
+  const v = current;
+  modalTitle.textContent = niceName(v.name) + " — loading...";
+  try {
+    const url = v.apiUrl || v.src;
+    const opts = v.apiUrl ? { headers: { "Accept": "application/octet-stream" } } : {};
+    const r = await fetch(url, opts);
+    if (!r.ok) throw new Error();
+    const raw = await r.blob();
+    const typed = new Blob([raw], { type: "video/mp4" });
+    if (blobFallbackUrl) URL.revokeObjectURL(blobFallbackUrl);
+    blobFallbackUrl = URL.createObjectURL(typed);
+    if (current !== v) return; // user moved on
+    modalVideo.src = blobFallbackUrl;
+    modalVideo.play().catch(()=>{});
+  } catch(e) {
+    // leave the native error state
+  } finally {
+    if (current === v) modalTitle.textContent = niceName(v.name);
+  }
+}
+modalVideo.addEventListener("error", () => {
+  if (playerModal.classList.contains("open")) playerBlobFallback();
+});
+
 function closePlayer(){
   playerModal.classList.remove("open");
   modalVideo.pause();
@@ -1376,8 +1410,9 @@ trimGo.addEventListener("click", async () => {
     const args = preciseCut.checked
       ? ["-i", inFile, "-ss", String(s), "-to", String(e),
          "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+         "-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
          "-maxrate", "8M", "-bufsize", "16M",
-         "-c:a", "aac", "-movflags", "+faststart", outFile]
+         "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", outFile]
       : ["-ss", String(s), "-to", String(e), "-i", inFile,
          "-c", "copy", "-avoid_negative_ts", "make_zero",
          "-movflags", "+faststart", outFile];

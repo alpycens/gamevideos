@@ -178,10 +178,11 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .up-list{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
 .up-item{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px}
 .up-item .row{display:flex;justify-content:space-between;gap:10px;align-items:center}
-.up-item .fname{word-break:break-all;font-weight:500}
+.up-item .fname{word-break:break-all;font-weight:500;flex:1}
 .up-item .status{font-family:'Chakra Petch',sans-serif;font-size:12px;white-space:nowrap;color:var(--muted)}
 .up-item .status.ok{color:var(--green)}
 .up-item .status.fail{color:var(--rec)}
+.up-item .status.warn{color:var(--amber)}
 .bar{height:4px;background:var(--line);border-radius:99px;margin-top:8px;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--amber);border-radius:99px;transition:width .3s}
 
@@ -308,7 +309,7 @@ footer{
 <div class="modal" id="uploadModal">
   <div class="panel">
     <h2><span class="rec-dot"></span>Upload Video</h2>
-    <p class="desc">Selected videos are saved to the <b>videos/</b> folder in the repo and appear in the list automatically.</p>
+    <p class="desc">Videos are saved to the <b>videos/</b> folder in the repo and appear in the list automatically.</p>
 
     <div class="field" id="tokenField">
       <label>GitHub Token (entered once, stored in this browser)</label>
@@ -322,7 +323,7 @@ footer{
     <div class="drop" id="dropZone">
       <div class="big-ico">🎬</div>
       Drag videos here or <b>click to browse</b><br>
-      <span style="font-size:12px">mp4 / webm · up to 2 GB per file</span>
+      <span style="font-size:12px">mp4 / webm · up to 70 MB per file — bigger files: use ✂ Trim first</span>
     </div>
     <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime" multiple hidden>
 
@@ -364,11 +365,11 @@ footer{
     <div class="trim-len" id="trimLen"></div>
 
     <div class="radio-row">
-      <label><input type="radio" name="trimMode" value="copy" id="modeCopy" checked> Save as a new file</label>
+      <label id="modeCopyLabel"><input type="radio" name="trimMode" value="copy" id="modeCopy" checked> Save as a new file</label>
       <div class="newname-field" id="newNameField">
         <input id="trimNewName" type="text" autocomplete="off" spellcheck="false">
       </div>
-      <label><input type="radio" name="trimMode" value="replace"> Overwrite the original (old version is lost)</label>
+      <label id="modeReplaceLabel"><input type="radio" name="trimMode" value="replace"> Overwrite the original (old version is lost)</label>
     </div>
 
     <label class="check-row">
@@ -397,15 +398,17 @@ footer{
    fill the FALLBACK values for local testing.  */
 const VIDEO_FOLDER = "videos";
 const FALLBACK_OWNER = "alpycens";     // your github username
-const FALLBACK_REPO  = "clips";        // your repo name
+const FALLBACK_REPO  = "gamevideos";   // your repo name
 const BRANCH = "main";
-const RELEASE_TAG = "clips";           // uploads are stored as assets of this release
 /* SHA-256 hash of the admin PIN                */
 const PIN_HASH = "b5d8a55fb763ff8e61c885c836cbfdb97f9699b2eadac509be2a9c38b62f8857";
 /* ============================================ */
 
 const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
-const MAX_BYTES = 1900 * 1024 * 1024;  // release asset limit is 2 GB
+/* GitHub's blob API caps the request at 100 MB of base64 —
+   that means ~70 MB of raw video per file. Bigger files must
+   be trimmed in the browser first. */
+const UPLOAD_MAX = 70 * 1024 * 1024;
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
@@ -470,43 +473,22 @@ async function copyShare(name){
 async function load(){
   showState('<div class="spinner"></div>Loading clips...');
   try{
-    const bust = "t=" + Date.now();
-    const [folderRes, relRes] = await Promise.all([
-      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&${bust}`),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`)
-    ]);
-
-    const vids = [];
-    if (folderRes.ok) {
-      const items = await folderRes.json();
-      items
-        .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
-        .forEach(i => vids.push({
-          name: i.name, size: i.size, sha: i.sha,
-          src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name)
-        }));
-    }
-    if (relRes.ok) {
-      const rel = await relRes.json();
-      (rel.assets || [])
-        .filter(a => VIDEO_EXT.some(e => a.name.toLowerCase().endsWith(e)))
-        .forEach(a => vids.push({
-          name: a.name, size: a.size, assetId: a.id,
-          src: a.browser_download_url,
-          apiUrl: a.url
-        }));
-    }
-    if (!folderRes.ok && !relRes.ok && folderRes.status !== 404 && relRes.status !== 404) {
-      throw new Error("Couldn't fetch the list (error " + folderRes.status + ")");
-    }
-
-    allVideos = vids.sort((a,b) => b.name.localeCompare(a.name));
-    if (!allVideos.length) {
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&t=${Date.now()}`;
+    const r = await fetch(url);
+    if (r.status === 404) {
+      allVideos = [];
       countChip.textContent = "0 CLIPS";
       showState(`<div class="big">No clips yet</div>
-        Upload your first video with the button in the top right.`);
+        Upload your first video with the button in the top right —
+        the <code>${VIDEO_FOLDER}/</code> folder is created automatically.`);
       return;
     }
+    if (!r.ok) throw new Error("Couldn't fetch the list (error "+r.status+")");
+    const items = await r.json();
+    allVideos = items
+      .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
+      .map(i => ({ name: i.name, size: i.size, src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name) }))
+      .sort((a,b) => b.name.localeCompare(a.name));
     render(allVideos);
     const v = new URLSearchParams(location.search).get("v");
     if (v) {
@@ -655,16 +637,31 @@ async function ghJson(url, opts, step){
   return r.json();
 }
 
-/* Commits a file via the Git Database API — used only when overwriting
-   a video that lives in the videos/ folder of the repo. */
-async function ghCommitFile(path, b64, message){
+/* Uploads the blob with XHR so we can show real progress. */
+function ghCreateBlob(b64, onProgress){
+  return new Promise((res, rej) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", GH_API + "/git/blobs");
+    xhr.setRequestHeader("Authorization", "Bearer " + getToken());
+    xhr.setRequestHeader("Accept", "application/vnd.github+json");
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) res(JSON.parse(xhr.responseText).sha);
+      else if (xhr.status === 401 || xhr.status === 403) rej(new Error("Token is invalid or lacks permission"));
+      else if (xhr.status === 422 || xhr.status === 413) rej(new Error("File is too large for GitHub — trim it smaller"));
+      else rej(new Error("Upload failed (GitHub error " + xhr.status + ")"));
+    };
+    xhr.onerror = () => rej(new Error("Network error during upload"));
+    xhr.send(JSON.stringify({ content: b64, encoding: "base64" }));
+  });
+}
+
+/* Commits an already-uploaded blob to the videos/ folder. */
+async function ghCommitBlob(path, blobSha, message){
   const H = ghHeaders();
-  // 1) upload content as a blob
-  const blob = await ghJson(GH_API + "/git/blobs", {
-    method: "POST", headers: H,
-    body: JSON.stringify({ content: b64, encoding: "base64" })
-  }, "Blob upload");
-  // 2) latest commit on the branch
   let ref;
   try {
     ref = await ghJson(GH_API + "/git/ref/heads/" + BRANCH, { headers: H }, "Branch lookup");
@@ -674,24 +671,27 @@ async function ghCommitFile(path, b64, message){
   }
   const parentSha = ref.object.sha;
   const parentCommit = await ghJson(GH_API + "/git/commits/" + parentSha, { headers: H }, "Commit lookup");
-  // 3) new tree containing the file
   const tree = await ghJson(GH_API + "/git/trees", {
     method: "POST", headers: H,
     body: JSON.stringify({
       base_tree: parentCommit.tree.sha,
-      tree: [{ path, mode: "100644", type: "blob", sha: blob.sha }]
+      tree: [{ path, mode: "100644", type: "blob", sha: blobSha }]
     })
   }, "Tree creation");
-  // 4) new commit
   const commit = await ghJson(GH_API + "/git/commits", {
     method: "POST", headers: H,
     body: JSON.stringify({ message, tree: tree.sha, parents: [parentSha] })
   }, "Commit creation");
-  // 5) move the branch to the new commit
   await ghJson(GH_API + "/git/refs/heads/" + ref.ref.replace("refs/heads/",""), {
     method: "PATCH", headers: H,
     body: JSON.stringify({ sha: commit.sha })
   }, "Branch update");
+}
+
+async function ghUploadVideo(path, blob, message, onProgress){
+  const b64 = await blobToBase64(blob);
+  const blobSha = await ghCreateBlob(b64, onProgress);
+  await ghCommitBlob(path, blobSha, message);
 }
 
 function blobToBase64(blob){
@@ -701,60 +701,6 @@ function blobToBase64(blob){
     r.onerror = () => rej(new Error("Couldn't read the file"));
     r.readAsDataURL(blob);
   });
-}
-
-/* ---------- release helpers (video storage, up to 2 GB per file) ---------- */
-let releaseIdCache = null;
-
-async function ensureRelease(){
-  if (releaseIdCache) return releaseIdCache;
-  const H = ghHeaders();
-  const r = await fetch(GH_API + "/releases/tags/" + RELEASE_TAG, { headers: H });
-  if (r.ok) {
-    releaseIdCache = (await r.json()).id;
-    return releaseIdCache;
-  }
-  if (r.status !== 404) throw new Error("Release lookup failed (GitHub error " + r.status + ")");
-  const created = await ghJson(GH_API + "/releases", {
-    method: "POST", headers: H,
-    body: JSON.stringify({
-      tag_name: RELEASE_TAG,
-      name: "Clips",
-      body: "Video storage for the clip archive. Managed automatically — don't delete.",
-      make_latest: "false"
-    })
-  }, "Release creation");
-  releaseIdCache = created.id;
-  return releaseIdCache;
-}
-
-function uploadAsset(releaseId, file, name, onProgress){
-  return new Promise((res, rej) => {
-    const xhr = new XMLHttpRequest();
-    const url = `https://uploads.github.com/repos/${owner}/${repo}/releases/${releaseId}/assets?name=${encodeURIComponent(name)}`;
-    xhr.open("POST", url);
-    xhr.setRequestHeader("Authorization", "Bearer " + getToken());
-    xhr.setRequestHeader("Accept", "application/vnd.github+json");
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-    xhr.upload.onprogress = e => {
-      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) res(JSON.parse(xhr.responseText));
-      else if (xhr.status === 401 || xhr.status === 403) rej(new Error("Token is invalid or lacks permission"));
-      else if (xhr.status === 422) rej(new Error("A file with this name already exists"));
-      else rej(new Error("Upload failed (GitHub error " + xhr.status + ")"));
-    };
-    xhr.onerror = () => rej(new Error("Network error during upload"));
-    xhr.send(file);
-  });
-}
-
-async function deleteAsset(assetId){
-  const r = await fetch(GH_API + "/releases/assets/" + assetId, {
-    method: "DELETE", headers: ghHeaders()
-  });
-  if (!r.ok && r.status !== 404) throw new Error("Couldn't remove the old version (GitHub error " + r.status + ")");
 }
 
 /* ---------- upload ---------- */
@@ -805,22 +751,23 @@ function addFiles(files){
     if (!VIDEO_EXT.some(e => f.name.toLowerCase().endsWith(e))) {
       showUpErr(`"${f.name}" is not a video file, skipped.`); continue;
     }
-    if (f.size > MAX_BYTES) {
-      showUpErr(`"${f.name}" is ${fmtSize(f.size)} — over the 2 GB per-file limit.`); continue;
-    }
     if (queue.some(q => q.file.name === f.name)) continue;
+    const tooBig = f.size > UPLOAD_MAX;
     const item = document.createElement("div");
     item.className = "up-item";
     item.innerHTML = `
       <div class="row">
         <span class="fname">${f.name}</span>
-        <span class="status">${fmtSize(f.size)}</span>
+        <button class="mini-btn trim-local" style="padding:4px 10px" title="Trim before uploading">✂ Trim</button>
+        <span class="status${tooBig ? " warn" : ""}">${tooBig ? fmtSize(f.size) + " — too big, ✂ Trim it" : fmtSize(f.size)}</span>
       </div>
       <div class="bar"><i></i></div>`;
     upList.appendChild(item);
-    queue.push({file: f, el: item});
+    const entry = {file: f, el: item, tooBig};
+    item.querySelector(".trim-local").addEventListener("click", () => openTrimLocal(entry));
+    queue.push(entry);
   }
-  uploadStart.disabled = queue.length === 0;
+  uploadStart.disabled = !queue.some(q => !q.tooBig);
 }
 function showUpErr(msg){
   upErr.textContent = msg;
@@ -834,27 +781,20 @@ uploadStart.addEventListener("click", async () => {
   tokenField.style.display = "none";
   uploadStart.disabled = true;
   upErr.classList.remove("show");
-  let okCount = 0;
-
-  let releaseId;
-  try {
-    releaseId = await ensureRelease();
-  } catch(e) {
-    showUpErr(e.message);
-    uploadStart.disabled = false;
-    return;
-  }
+  let okCount = 0, eligible = 0;
 
   for (const q of queue){
     const status = q.el.querySelector(".status");
     const bar = q.el.querySelector(".bar i");
+    if (q.tooBig) continue;   // must be trimmed first
+    eligible++;
     if (status.classList.contains("ok")) { okCount++; continue; }
     status.className = "status";
     try{
       const safeName = q.file.name.replace(/[^\w.\-() ]+/g, "_");
       if (allVideos.some(v => v.name === safeName)) throw new Error("A file with this name already exists");
       status.textContent = "Uploading... 0%";
-      await uploadAsset(releaseId, q.file, safeName, p => {
+      await ghUploadVideo(`${VIDEO_FOLDER}/${safeName}`, q.file, "Upload clip: " + safeName, p => {
         const pct = Math.round(p * 100);
         bar.style.width = pct + "%";
         status.textContent = "Uploading... " + pct + "%";
@@ -871,7 +811,7 @@ uploadStart.addEventListener("click", async () => {
   }
 
   uploadStart.disabled = false;
-  if (okCount === queue.length && okCount > 0){
+  if (okCount === eligible && okCount > 0){
     showToast(okCount + (okCount === 1 ? " video uploaded" : " videos uploaded"));
     setTimeout(() => { closeUpload(); load(); }, 900);
   } else {
@@ -891,6 +831,8 @@ const trimLog = document.getElementById("trimLog");
 const trimGo = document.getElementById("trimGo");
 const preciseCut = document.getElementById("preciseCut");
 let trimTarget = null;
+let trimLocalEntry = null;   // set when trimming a not-yet-uploaded local file
+let trimObjectUrl = null;
 let ffmpeg = null;
 
 document.getElementById("trimOpenBtn").addEventListener("click", () => {
@@ -899,22 +841,45 @@ document.getElementById("trimOpenBtn").addEventListener("click", () => {
   askPin(() => openTrim(target));
 });
 
-function openTrim(v){
-  trimTarget = v;
-  closePlayer();
-  trimVideo.src = v.src;
-  trimDesc.textContent = v.name + " · " + fmtSize(v.size);
+function initTrimUI(name){
   trimStart.value = "0:00";
   trimEnd.value = "0:00";
   trimVideo.addEventListener("loadedmetadata", () => {
     trimEnd.value = fmtDur(trimVideo.duration);
     updateLen();
   }, {once:true});
-  const base = v.name.replace(/\.[^.]+$/,"");
-  const ext = (v.name.match(/\.[^.]+$/) || [".mp4"])[0];
+  const base = name.replace(/\.[^.]+$/,"");
+  const ext = (name.match(/\.[^.]+$/) || [".mp4"])[0];
   trimNewName.value = base + "_trimmed" + ext;
   setLog('Set the trim range, then hit "Trim & upload".');
   trimGo.disabled = false;
+}
+
+function openTrimLocal(entry){
+  askPin(() => {
+    trimLocalEntry = entry;
+    const f = entry.file;
+    trimObjectUrl = URL.createObjectURL(f);
+    trimTarget = { local: f, name: f.name };
+    closeUpload();
+    trimVideo.src = trimObjectUrl;
+    trimDesc.textContent = f.name + " · " + fmtSize(f.size) + " · will be uploaded after trimming";
+    initTrimUI(f.name);
+    document.getElementById("modeCopy").checked = true;
+    document.getElementById("modeReplaceLabel").style.display = "none";
+    document.getElementById("newNameField").style.display = "";
+    trimModal.classList.add("open");
+  });
+}
+
+function openTrim(v){
+  trimTarget = v;
+  trimLocalEntry = null;
+  closePlayer();
+  trimVideo.src = v.src;
+  trimDesc.textContent = v.name + " · " + fmtSize(v.size);
+  initTrimUI(v.name);
+  document.getElementById("modeReplaceLabel").style.display = "";
   trimModal.classList.add("open");
 }
 function closeTrim(){
@@ -922,6 +887,7 @@ function closeTrim(){
   trimVideo.pause();
   trimVideo.removeAttribute("src");
   trimVideo.load();
+  if (trimObjectUrl) { URL.revokeObjectURL(trimObjectUrl); trimObjectUrl = null; }
 }
 document.getElementById("trimClose").addEventListener("click", closeTrim);
 
@@ -985,7 +951,7 @@ trimGo.addEventListener("click", async () => {
   const s = parseTime(trimStart.value), e = parseTime(trimEnd.value);
   if (isNaN(s) || isNaN(e) || e <= s) { setLog("Invalid time range. Example format: 1:23", "fail"); return; }
 
-  const replace = !document.getElementById("modeCopy").checked;
+  const replace = !trimTarget.local && !document.getElementById("modeCopy").checked;
   const ext = (trimTarget.name.match(/\.[^.]+$/) || [".mp4"])[0];
   let outName = replace
     ? trimTarget.name
@@ -1001,16 +967,15 @@ trimGo.addEventListener("click", async () => {
       if (p > 0 && p <= 1) setLog("Trimming... " + Math.round(p * 100) + "%");
     });
 
-    setLog("Fetching the source video...");
-    let srcRes;
-    if (trimTarget.apiUrl) {
-      // release asset: fetch through the API (CORS-safe, follows redirect to storage)
-      srcRes = await fetch(trimTarget.apiUrl, { headers: { "Accept": "application/octet-stream" } });
+    setLog("Reading the source video...");
+    let srcData;
+    if (trimTarget.local) {
+      srcData = new Uint8Array(await trimTarget.local.arrayBuffer());
     } else {
-      srcRes = await fetch(trimTarget.src);
+      const srcRes = await fetch(trimTarget.src);
+      if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
+      srcData = new Uint8Array(await srcRes.arrayBuffer());
     }
-    if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
-    const srcData = new Uint8Array(await srcRes.arrayBuffer());
 
     const inFile = "in" + ext, outFile = "out" + ext;
     await ff.writeFile(inFile, srcData);
@@ -1028,31 +993,23 @@ trimGo.addEventListener("click", async () => {
     await ff.deleteFile(outFile).catch(()=>{});
     const blob = new Blob([outData.buffer], {type: "video/mp4"});
     if (blob.size < 1000) throw new Error("Trim failed — check the time range");
-    if (blob.size > MAX_BYTES) throw new Error("The trimmed clip exceeds the 2 GB limit");
+    if (blob.size > UPLOAD_MAX) throw new Error(
+      "Trimmed clip is " + fmtSize(blob.size) + " — still over the 70 MB limit. " +
+      "Pick a shorter range, or tick Precise cut (re-encoding shrinks the file a lot).");
 
-    const releaseId = await ensureRelease();
-    if (replace) {
-      if (trimTarget.assetId) {
-        // release asset: remove old version, then upload the new one
-        setLog("Removing the old version...");
-        await deleteAsset(trimTarget.assetId);
-        setLog("Uploading... 0%");
-        await uploadAsset(releaseId, blob, outName, p =>
-          setLog("Uploading... " + Math.round(p * 100) + "%"));
-      } else {
-        // repo-folder video: overwrite via a commit
-        setLog("Uploading... (" + fmtSize(blob.size) + ")");
-        const b64 = await blobToBase64(blob);
-        await ghCommitFile(`${VIDEO_FOLDER}/${outName}`, b64, "Trim clip: " + outName);
-      }
-    } else {
-      setLog("Uploading... 0%");
-      await uploadAsset(releaseId, blob, outName, p =>
-        setLog("Uploading... " + Math.round(p * 100) + "%"));
-    }
+    setLog("Uploading... 0%");
+    await ghUploadVideo(`${VIDEO_FOLDER}/${outName}`, blob,
+      (replace ? "Trim clip: " : "Trimmed clip: ") + outName,
+      p => setLog("Uploading... " + Math.round(p * 100) + "%"));
 
-    setLog("Done ✓ " + outName + " uploaded.", "ok");
+    setLog("Done ✓ " + outName + " uploaded. It may take a minute before it plays.", "ok");
     showToast("Trimmed video uploaded");
+    if (trimLocalEntry) {
+      trimLocalEntry.el.remove();
+      queue = queue.filter(q => q !== trimLocalEntry);
+      trimLocalEntry = null;
+      uploadStart.disabled = !queue.some(q => !q.tooBig);
+    }
     setTimeout(() => { closeTrim(); load(); }, 1600);
   }catch(err){
     setLog("Error: " + err.message, "fail");
@@ -1061,7 +1018,7 @@ trimGo.addEventListener("click", async () => {
   }
 });
 
-footer.textContent = `${owner}/${repo} · clips are stored as release assets`;
+footer.textContent = `${owner}/${repo} · auto-listed from the ${VIDEO_FOLDER}/ folder`;
 load();
 </script>
 </body>

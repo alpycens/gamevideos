@@ -128,6 +128,8 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
   border:1px solid var(--line);display:block;
 }
 .modal-bar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.admin-only{display:none !important}
+body.admin .admin-only{display:inline-flex !important}
 .modal-bar .title{
   flex:1;font-family:'Chakra Petch',sans-serif;font-size:15px;letter-spacing:.03em;
   min-width:160px;word-break:break-word;
@@ -280,9 +282,13 @@ footer{
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
         Download
       </a>
-      <button class="btn" id="trimOpenBtn">
+      <button class="btn admin-only" id="trimOpenBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
         Trim
+      </button>
+      <button class="btn admin-only" id="renameBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        Rename
       </button>
       <button class="btn primary" id="closeBtn">Close</button>
     </div>
@@ -491,7 +497,7 @@ async function load(){
       items
         .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
         .forEach(i => vids.push({
-          name: i.name, size: i.size,
+          name: i.name, size: i.size, sha: i.sha,
           src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name)
         }));
     }
@@ -615,6 +621,7 @@ const pinInput = document.getElementById("pinInput");
 const pinErr = document.getElementById("pinErr");
 let unlocked = sessionStorage.getItem("clipAdmin") === "1";
 let afterUnlock = null;
+if (unlocked) document.body.classList.add("admin");
 
 function askPin(then){
   if (unlocked) { then(); return; }
@@ -631,6 +638,7 @@ async function tryPin(){
   if (h === PIN_HASH) {
     unlocked = true;
     sessionStorage.setItem("clipAdmin","1");
+    document.body.classList.add("admin");
     closePin();
     if (afterUnlock) { afterUnlock(); afterUnlock = null; }
   } else {
@@ -644,6 +652,71 @@ pinInput.addEventListener("keydown", e => { if (e.key === "Enter") tryPin(); });
 pinModal.addEventListener("click", e => { if (e.target === pinModal) closePin(); });
 
 document.getElementById("uploadOpenBtn").addEventListener("click", () => askPin(openUpload));
+
+/* ---------- rename (admin) ---------- */
+async function renameFolderFile(video, newName){
+  // move = add the same blob at the new path + delete the old path, in one commit
+  const H = ghHeaders();
+  let ref;
+  try {
+    ref = await ghJson(GH_API + "/git/ref/heads/" + BRANCH, { headers: H }, "Branch lookup");
+  } catch(e) {
+    const info = await ghJson(GH_API, { headers: H }, "Repo lookup");
+    ref = await ghJson(GH_API + "/git/ref/heads/" + info.default_branch, { headers: H }, "Branch lookup");
+  }
+  const parentSha = ref.object.sha;
+  const parentCommit = await ghJson(GH_API + "/git/commits/" + parentSha, { headers: H }, "Commit lookup");
+  const tree = await ghJson(GH_API + "/git/trees", {
+    method: "POST", headers: H,
+    body: JSON.stringify({
+      base_tree: parentCommit.tree.sha,
+      tree: [
+        { path: VIDEO_FOLDER + "/" + newName, mode: "100644", type: "blob", sha: video.sha },
+        { path: VIDEO_FOLDER + "/" + video.name, mode: "100644", type: "blob", sha: null }
+      ]
+    })
+  }, "Tree creation");
+  const commit = await ghJson(GH_API + "/git/commits", {
+    method: "POST", headers: H,
+    body: JSON.stringify({ message: "Rename clip: " + video.name + " → " + newName, tree: tree.sha, parents: [parentSha] })
+  }, "Commit creation");
+  await ghJson(GH_API + "/git/refs/heads/" + ref.ref.replace("refs/heads/",""), {
+    method: "PATCH", headers: H,
+    body: JSON.stringify({ sha: commit.sha })
+  }, "Branch update");
+}
+
+async function renameAsset(video, newName){
+  await ghJson(GH_API + "/releases/assets/" + video.assetId, {
+    method: "PATCH", headers: ghHeaders(),
+    body: JSON.stringify({ name: newName })
+  }, "Rename");
+}
+
+document.getElementById("renameBtn").addEventListener("click", () => {
+  if (!current) return;
+  const target = current;
+  askPin(async () => {
+    if (!getToken()) { showToast("Save your GitHub token first (upload panel)"); return; }
+    const ext = (target.name.match(/\.[^.]+$/) || [".mp4"])[0];
+    let input = prompt("New name for this video:", target.name);
+    if (input === null) return;
+    let newName = input.trim().replace(/[^\w.\-() ]+/g, "_");
+    if (!newName) return;
+    if (!VIDEO_EXT.some(x => newName.toLowerCase().endsWith(x))) newName += ext;
+    if (newName === target.name) return;
+    if (allVideos.some(v => v.name === newName)) { showToast("That name is already taken"); return; }
+    try {
+      if (target.assetId) await renameAsset(target, newName);
+      else await renameFolderFile(target, newName);
+      showToast("Renamed to " + newName);
+      closePlayer();
+      load();
+    } catch(e) {
+      showToast("Error: " + e.message);
+    }
+  });
+});
 
 /* ---------- GitHub API helpers ---------- */
 function getToken(){ return localStorage.getItem("ghToken") || ""; }

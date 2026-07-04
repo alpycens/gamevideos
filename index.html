@@ -355,7 +355,7 @@ body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
 <div class="modal" id="uploadModal">
   <div class="panel">
     <h2><span class="rec-dot"></span>Upload Video</h2>
-    <p class="desc">Small videos upload right here. Big videos (up to <b>2 GB</b>) go through GitHub's release page — one click below — and show up in the list automatically.</p>
+    <p class="desc">Videos upload here and play on every device. Note: files added via GitHub's release page <b>don't play on phones</b> — bring big videos in through <b>✂ Trim / Fit for phone</b> instead.</p>
 
     <div class="field" id="tokenField">
       <label>GitHub Token (entered once, stored in this browser)</label>
@@ -448,9 +448,9 @@ body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
 
     <div class="panel-actions">
       <button class="btn" id="trimClose">Close</button>
-      <button class="btn" id="splitBtn" title="Cuts the whole video into ~35 MB parts that play on phones">
+      <button class="btn" id="splitBtn" title="Re-encodes the video so it plays on phones — short videos become one file, long ones a few parts">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="7" height="8" rx="1"/><rect x="14" y="8" width="7" height="8" rx="1"/></svg>
-        Split into parts
+        Fit for phone
       </button>
       <button class="btn primary" id="trimGo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
@@ -800,6 +800,10 @@ async function playAssetBlob(v){
   } catch(e) {
     setLoadBar(null);
     if (current !== v) return;
+    if (IS_IOS) {
+      modalTitle.textContent = niceName(v.name) +
+        " — this file can't play on phones yet (admin: open it on a computer and use Fit for phone)";
+    }
     // last resort: hand the direct URL to the player
     modalVideo.src = v.src;
     modalVideo.play().catch(()=>{});
@@ -1595,15 +1599,8 @@ trimGo.addEventListener("click", async () => {
     let srcData;
     if (trimTarget.local) {
       srcData = new Uint8Array(await trimTarget.local.arrayBuffer());
-    } else if (trimTarget.apiUrl) {
-      // release asset: fetch through the API (CORS-safe)
-      const srcRes = await fetch(trimTarget.apiUrl, { headers: { "Accept": "application/octet-stream" } });
-      if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
-      srcData = new Uint8Array(await srcRes.arrayBuffer());
     } else {
-      const srcRes = await fetch(trimTarget.src);
-      if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
-      srcData = new Uint8Array(await srcRes.arrayBuffer());
+      srcData = await readRemoteSource(trimTarget);
     }
 
     const inFile = "in" + ext, outFile = "out" + ext;
@@ -1673,6 +1670,24 @@ trimGo.addEventListener("click", async () => {
   }
 });
 
+/* Reads a video that's already on GitHub, for trimming/re-encoding.
+   If GitHub blocks direct access, tells you the manual route. */
+async function readRemoteSource(v){
+  const MANUAL = "GitHub blocked direct access to this file. Workaround: hit Download, then drag the downloaded file into the upload panel and use ✂ Trim / Fit for phone there.";
+  try {
+    if (v.apiUrl) {
+      const r = await fetch(v.apiUrl, { headers: { "Accept": "application/octet-stream" } });
+      if (!r.ok) throw new Error();
+      return new Uint8Array(await r.arrayBuffer());
+    }
+    const r = await fetch(v.src);
+    if (!r.ok) throw new Error();
+    return new Uint8Array(await r.arrayBuffer());
+  } catch(e) {
+    throw new Error(MANUAL);
+  }
+}
+
 /* ---------- split into phone-friendly parts ---------- */
 const splitBtn = document.getElementById("splitBtn");
 
@@ -1686,16 +1701,24 @@ splitBtn.addEventListener("click", async () => {
   }
 
   const srcSize = trimTarget.local ? trimTarget.local.size : trimTarget.size;
-  const TARGET = 32 * 1024 * 1024;
-  const nParts = Math.max(1, Math.ceil(srcSize / TARGET));
-  if (nParts === 1) {
-    setLog("This video is already small enough — just use Trim & upload.", "fail"); return;
-  }
+  const PART_BYTES = 34 * 1024 * 1024;          // safe per-file budget
+  const srcBitrate = (srcSize * 8) / totalDur;  // bits per second
+  const TARGET_BITRATE = 3.7e6;                 // re-encode target (video+audio)
+
+  // If the recording's bitrate already fits, cut without re-encoding (fast).
+  // If it's a heavy recording, re-encode — far fewer, phone-safe parts.
+  const reencode = srcBitrate > 4.6e6;
+  const nParts = reencode
+    ? Math.max(1, Math.ceil(totalDur / (PART_BYTES * 8 / TARGET_BITRATE)))
+    : Math.max(1, Math.ceil(srcSize / PART_BYTES));
   const partDur = totalDur / nParts;
+  const single = nParts === 1;
 
   const ext = (trimTarget.name.match(/\.[^.]+$/) || [".mp4"])[0];
   const base = trimTarget.name.replace(/\.[^.]+$/,"").replace(/[^\w.\-() ]+/g,"_");
-  const partName = i => `${base}_part${String(i).padStart(2,"0")}${ext}`;
+  const partName = i => single
+    ? `${base}_phone${ext}`
+    : `${base}_part${String(i).padStart(2,"0")}${ext}`;
   for (let i = 1; i <= nParts; i++) {
     if (allVideos.some(v => v.name === partName(i))) {
       setLog(`"${partName(i)}" already exists — rename or remove it first.`, "fail"); return;
@@ -1711,14 +1734,8 @@ splitBtn.addEventListener("click", async () => {
     let srcData;
     if (trimTarget.local) {
       srcData = new Uint8Array(await trimTarget.local.arrayBuffer());
-    } else if (trimTarget.apiUrl) {
-      const r = await fetch(trimTarget.apiUrl, { headers: { "Accept": "application/octet-stream" } });
-      if (!r.ok) throw new Error("Couldn't fetch the source video");
-      srcData = new Uint8Array(await r.arrayBuffer());
     } else {
-      const r = await fetch(trimTarget.src);
-      if (!r.ok) throw new Error("Couldn't fetch the source video");
-      srcData = new Uint8Array(await r.arrayBuffer());
+      srcData = await readRemoteSource(trimTarget);
     }
 
     const inFile = "in" + ext;
@@ -1734,20 +1751,25 @@ splitBtn.addEventListener("click", async () => {
       const outName = partName(i + 1);
       const outFile = "part" + (i + 1) + ext;
 
-      setLog(`Part ${i+1}/${nParts}: cutting...`);
-      await ff.exec(["-ss", String(s), "-to", String(e), "-i", inFile,
-        "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", outFile]);
+      setLog(`Part ${i+1}/${nParts}: ${reencode ? "encoding for phones..." : "cutting..."}`);
+      const mobileArgs = rate => ["-i", inFile, "-ss", String(s), "-to", String(e),
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "24",
+        "-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
+        "-maxrate", rate, "-bufsize", "7M",
+        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", outFile];
+      if (reencode) {
+        await ff.exec(mobileArgs("3500k"));
+      } else {
+        await ff.exec(["-ss", String(s), "-to", String(e), "-i", inFile,
+          "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", outFile]);
+      }
       let data = await ff.readFile(outFile);
       await ff.deleteFile(outFile).catch(()=>{});
       let blob = new Blob([data.buffer], { type: "video/mp4" });
 
       if (blob.size > UPLOAD_MAX) {
-        setLog(`Part ${i+1}/${nParts}: re-encoding (too big)...`);
-        await ff.exec(["-i", inFile, "-ss", String(s), "-to", String(e),
-          "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-          "-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
-          "-maxrate", "6M", "-bufsize", "12M",
-          "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", outFile]);
+        setLog(`Part ${i+1}/${nParts}: compressing harder...`);
+        await ff.exec(mobileArgs("2500k"));
         data = await ff.readFile(outFile);
         await ff.deleteFile(outFile).catch(()=>{});
         blob = new Blob([data.buffer], { type: "video/mp4" });
@@ -1772,8 +1794,10 @@ splitBtn.addEventListener("click", async () => {
     await ff.deleteFile(inFile).catch(()=>{});
     await saveCategories(doneNames).catch(()=>{});
 
-    setLog(`Done ✓ ${nParts} parts uploaded — they play on phones. You can now delete the big original from GitHub's release page.`, "ok");
-    showToast(nParts + " parts uploaded");
+    setLog(single
+      ? `Done ✓ ${partName(1)} uploaded — plays on phones. You can delete the original from GitHub's release page.`
+      : `Done ✓ ${nParts} parts uploaded — they play on phones. You can delete the big original from GitHub's release page.`, "ok");
+    showToast(single ? "Phone version uploaded" : nParts + " parts uploaded");
     if (trimLocalEntry) {
       trimLocalEntry.el.remove();
       queue = queue.filter(q => q !== trimLocalEntry);

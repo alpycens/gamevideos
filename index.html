@@ -161,7 +161,8 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .admin-only{display:none !important}
 body.admin .admin-only{display:inline-flex !important}
 #playerModal.yt #dlBtn,
-#playerModal.yt #trimOpenBtn{display:none !important}
+#playerModal.yt #trimOpenBtn,
+#playerModal.yt #ytLinkBtn{display:none !important}
 #removeYtBtn{display:none !important}
 body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
 .modal-bar .title{
@@ -320,6 +321,10 @@ body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
       <button class="btn admin-only" id="trimOpenBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
         Trim
+      </button>
+      <button class="btn admin-only" id="ytLinkBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/></svg>
+        YouTube
       </button>
       <button class="btn admin-only" id="catBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
@@ -486,6 +491,7 @@ const RELEASE_TAG = "clips";
    player errors there, we fall back to downloading into the player. */
 const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const IS_MOBILE = IS_IOS || /Android/i.test(navigator.userAgent);
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
@@ -508,6 +514,7 @@ let allVideos = [];
 let categories = {};        // { "video.mp4": "Albion Online", ... }
 let durationsMap = {};      // { "video.mp4": seconds }
 let ytList = [];            // [ {id, title}, ... ] — YouTube unlisted videos
+let mobileMap = {};         // { "video.mp4": "youtubeId" } — phone playback via YouTube
 let thumbsMap = {};         // { "video.mp4": {url, sha} }
 let categoriesSha = null;   // sha of categories.json for updates
 let activeCat = "__all";
@@ -589,6 +596,7 @@ async function load(){
           categories = parsed.folders;
           durationsMap = parsed.durations || {};
           ytList = Array.isArray(parsed.yt) ? parsed.yt : [];
+          mobileMap = parsed.mobile || {};
         } else {
           categories = parsed || {};
         }
@@ -647,6 +655,7 @@ async function load(){
       } else {
         v.thumb = thumbsMap[v.name] ? thumbsMap[v.name].url : null;
         v.dur = durationsMap[v.name] || null;
+        v.ytMobile = mobileMap[v.name] || null;
       }
     });
     renderCatBar();
@@ -844,14 +853,18 @@ function openPlayer(v){
   current = v;
   const ytWrap = document.getElementById("ytWrap");
   const ytFrame = document.getElementById("ytFrame");
-  playerModal.classList.toggle("yt", !!v.isYt);
-  if (v.isYt) {
+  // play via YouTube when: it IS a YouTube entry, or it's a normal video
+  // with a YouTube link attached and we're on a phone
+  const useYt = v.isYt || (v.ytMobile && IS_MOBILE);
+  playerModal.classList.toggle("yt", !!useYt);
+  if (useYt) {
     modalVideo.style.display = "none";
     modalVideo.removeAttribute("src");
     modalVideo.load();
     ytWrap.style.display = "";
-    ytFrame.src = "https://www.youtube-nocookie.com/embed/" + v.ytId + "?rel=0&playsinline=1&autoplay=1";
-    modalTitle.textContent = v.title;
+    ytFrame.src = "https://www.youtube-nocookie.com/embed/" + (v.isYt ? v.ytId : v.ytMobile) +
+      "?rel=0&playsinline=1&autoplay=1";
+    modalTitle.textContent = v.isYt ? v.title : niceName(v.name);
   } else {
     ytFrame.src = "";
     ytWrap.style.display = "none";
@@ -878,6 +891,18 @@ async function playerBlobFallback(){
   if (!current || modalVideo.dataset.fallbackTried) return;
   modalVideo.dataset.fallbackTried = "1";
   const v = current;
+  // if a YouTube copy exists, switch to it — instant and reliable
+  if (v.ytMobile) {
+    playerModal.classList.add("yt");
+    modalVideo.style.display = "none";
+    modalVideo.removeAttribute("src");
+    modalVideo.load();
+    const ytWrap = document.getElementById("ytWrap");
+    ytWrap.style.display = "";
+    document.getElementById("ytFrame").src =
+      "https://www.youtube-nocookie.com/embed/" + v.ytMobile + "?rel=0&playsinline=1&autoplay=1";
+    return;
+  }
   if (v.assetId) { playAssetBlob(v); return; }
   modalTitle.textContent = niceName(v.name) + " — loading...";
   try {
@@ -1001,12 +1026,14 @@ async function renameAsset(video, newName){
 async function saveCategories(extraNames = []){
   // strip entries for videos that no longer exist
   const keep = k => allVideos.some(v => v.name === k) || extraNames.includes(k);
-  const folders = {}, durations = {};
+  const folders = {}, durations = {}, mobile = {};
   for (const [k, val] of Object.entries(categories)) if (val && keep(k)) folders[k] = val;
   for (const [k, val] of Object.entries(durationsMap)) if (val && keep(k)) durations[k] = val;
+  for (const [k, val] of Object.entries(mobileMap)) if (val && keep(k)) mobile[k] = val;
   categories = folders;
   durationsMap = durations;
-  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({ folders, durations, yt: ytList }, null, 2))));
+  mobileMap = mobile;
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({ folders, durations, mobile, yt: ytList }, null, 2))));
   const body = { message: "Update video metadata", content: b64, branch: BRANCH };
   if (categoriesSha) body.sha = categoriesSha;
   const r = await fetch(GH_API + "/contents/categories.json", {
@@ -1052,6 +1079,34 @@ function captureThumbSrc(src, revoke){
     v.src = src;
   });
 }
+
+document.getElementById("ytLinkBtn").addEventListener("click", () => {
+  if (!current || current.isYt) return;
+  const target = current;
+  askPin(async () => {
+    if (!getToken()) { showToast("Save your GitHub token first (upload panel)"); return; }
+    const cur = target.ytMobile ? "https://youtu.be/" + target.ytMobile : "";
+    const input = prompt(
+      "YouTube link for this video (phones will play it from YouTube).\nLeave empty to remove:", cur);
+    if (input === null) return;
+    const val = input.trim();
+    try {
+      if (!val) {
+        delete mobileMap[target.name];
+        target.ytMobile = null;
+      } else {
+        const id = parseYtId(val);
+        if (!id) { showToast("That doesn't look like a YouTube link"); return; }
+        mobileMap[target.name] = id;
+        target.ytMobile = id;
+      }
+      await saveCategories([target.name]);
+      showToast(val ? "YouTube link attached — phones will use it" : "YouTube link removed");
+    } catch(e) {
+      showToast("Error: " + e.message);
+    }
+  });
+});
 
 document.getElementById("catBtn").addEventListener("click", () => {
   if (!current) return;
@@ -1121,6 +1176,10 @@ document.getElementById("renameBtn").addEventListener("click", () => {
       if (durationsMap[target.name]) {
         durationsMap[newName] = durationsMap[target.name];
         delete durationsMap[target.name];
+      }
+      if (mobileMap[target.name]) {
+        mobileMap[newName] = mobileMap[target.name];
+        delete mobileMap[target.name];
       }
       await saveCategories([newName]).catch(()=>{});
       showToast("Renamed to " + newName);

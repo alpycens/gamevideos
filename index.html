@@ -309,7 +309,7 @@ footer{
 <div class="modal" id="uploadModal">
   <div class="panel">
     <h2><span class="rec-dot"></span>Upload Video</h2>
-    <p class="desc">Videos are saved to the <b>videos/</b> folder in the repo and appear in the list automatically.</p>
+    <p class="desc">Small videos upload right here. Big videos (up to <b>2 GB</b>) go through GitHub's release page — one click below — and show up in the list automatically.</p>
 
     <div class="field" id="tokenField">
       <label>GitHub Token (entered once, stored in this browser)</label>
@@ -323,7 +323,7 @@ footer{
     <div class="drop" id="dropZone">
       <div class="big-ico">🎬</div>
       Drag videos here or <b>click to browse</b><br>
-      <span style="font-size:12px">mp4 / webm · up to 70 MB per file — bigger files: use ✂ Trim first</span>
+      <span style="font-size:12px">mp4 / webm · up to 40 MB in-app · bigger: ✂ Trim or the GitHub page</span>
     </div>
     <input type="file" id="fileInput" accept="video/mp4,video/webm,video/quicktime" multiple hidden>
 
@@ -331,6 +331,10 @@ footer{
     <div class="err" id="upErr"></div>
 
     <div class="panel-actions">
+      <button class="btn" id="bigUploadBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+        Big files (2 GB) →
+      </button>
       <button class="btn" id="tokenForget">Forget token</button>
       <button class="btn" id="uploadClose">Close</button>
       <button class="btn primary" id="uploadStart" disabled>Start upload</button>
@@ -405,10 +409,12 @@ const PIN_HASH = "b5d8a55fb763ff8e61c885c836cbfdb97f9699b2eadac509be2a9c38b62f88
 /* ============================================ */
 
 const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
-/* GitHub's blob API caps the request at 100 MB of base64 —
-   that means ~70 MB of raw video per file. Bigger files must
-   be trimmed in the browser first. */
-const UPLOAD_MAX = 70 * 1024 * 1024;
+/* Browsers can only reach GitHub's blob API, which reliably
+   accepts ~40 MB of raw video per request. Bigger files are
+   trimmed in the browser, or uploaded on GitHub's release
+   page (up to 2 GB per file) — those are listed automatically. */
+const UPLOAD_MAX = 40 * 1024 * 1024;
+const RELEASE_TAG = "clips";
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
@@ -473,22 +479,42 @@ async function copyShare(name){
 async function load(){
   showState('<div class="spinner"></div>Loading clips...');
   try{
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&t=${Date.now()}`;
-    const r = await fetch(url);
-    if (r.status === 404) {
-      allVideos = [];
+    const bust = "t=" + Date.now();
+    const [folderRes, relRes] = await Promise.all([
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&${bust}`),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`)
+    ]);
+
+    const vids = [];
+    if (folderRes.ok) {
+      const items = await folderRes.json();
+      items
+        .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
+        .forEach(i => vids.push({
+          name: i.name, size: i.size,
+          src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name)
+        }));
+    }
+    if (relRes.ok) {
+      const rel = await relRes.json();
+      (rel.assets || [])
+        .filter(a => VIDEO_EXT.some(e => a.name.toLowerCase().endsWith(e)))
+        .forEach(a => {
+          if (vids.some(v => v.name === a.name)) return;
+          vids.push({
+            name: a.name, size: a.size, assetId: a.id,
+            src: a.browser_download_url, apiUrl: a.url
+          });
+        });
+    }
+
+    allVideos = vids.sort((a,b) => b.name.localeCompare(a.name));
+    if (!allVideos.length) {
       countChip.textContent = "0 CLIPS";
       showState(`<div class="big">No clips yet</div>
-        Upload your first video with the button in the top right —
-        the <code>${VIDEO_FOLDER}/</code> folder is created automatically.`);
+        Upload your first video with the button in the top right.`);
       return;
     }
-    if (!r.ok) throw new Error("Couldn't fetch the list (error "+r.status+")");
-    const items = await r.json();
-    allVideos = items
-      .filter(i => i.type === "file" && VIDEO_EXT.some(e => i.name.toLowerCase().endsWith(e)))
-      .map(i => ({ name: i.name, size: i.size, src: VIDEO_FOLDER + "/" + encodeURIComponent(i.name) }))
-      .sort((a,b) => b.name.localeCompare(a.name));
     render(allVideos);
     const v = new URLSearchParams(location.search).get("v");
     if (v) {
@@ -694,6 +720,39 @@ async function ghUploadVideo(path, blob, message, onProgress){
   await ghCommitBlob(path, blobSha, message);
 }
 
+/* ---------- big files: GitHub release page (up to 2 GB per file) ---------- */
+async function ensureRelease(){
+  const H = ghHeaders();
+  const r = await fetch(GH_API + "/releases/tags/" + RELEASE_TAG, { headers: H });
+  if (r.ok) return;
+  if (r.status !== 404) throw new Error("Release lookup failed (GitHub error " + r.status + ")");
+  await ghJson(GH_API + "/releases", {
+    method: "POST", headers: H,
+    body: JSON.stringify({
+      tag_name: RELEASE_TAG,
+      name: "Clips",
+      body: "Video storage for the clip archive. Managed by the site — don't delete.",
+      make_latest: "false"
+    })
+  }, "Release creation");
+}
+
+document.getElementById("bigUploadBtn").addEventListener("click", async () => {
+  if (!getToken()) { showUpErr("Enter and save your GitHub token first."); tokenField.style.display = ""; return; }
+  const btn = document.getElementById("bigUploadBtn");
+  btn.disabled = true;
+  try {
+    await ensureRelease();
+    window.open(`https://github.com/${owner}/${repo}/releases/edit/${RELEASE_TAG}`, "_blank");
+    upErr.classList.remove("show");
+    showToast("Drag your video onto the GitHub page, then Update release");
+  } catch(e) {
+    showUpErr(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 function blobToBase64(blob){
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -759,7 +818,7 @@ function addFiles(files){
       <div class="row">
         <span class="fname">${f.name}</span>
         <button class="mini-btn trim-local" style="padding:4px 10px" title="Trim before uploading">✂ Trim</button>
-        <span class="status${tooBig ? " warn" : ""}">${tooBig ? fmtSize(f.size) + " — too big, ✂ Trim it" : fmtSize(f.size)}</span>
+        <span class="status${tooBig ? " warn" : ""}">${tooBig ? fmtSize(f.size) + " — too big: ✂ Trim it, or use Big files →" : fmtSize(f.size)}</span>
       </div>
       <div class="bar"><i></i></div>`;
     upList.appendChild(item);
@@ -971,6 +1030,11 @@ trimGo.addEventListener("click", async () => {
     let srcData;
     if (trimTarget.local) {
       srcData = new Uint8Array(await trimTarget.local.arrayBuffer());
+    } else if (trimTarget.apiUrl) {
+      // release asset: fetch through the API (CORS-safe)
+      const srcRes = await fetch(trimTarget.apiUrl, { headers: { "Accept": "application/octet-stream" } });
+      if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
+      srcData = new Uint8Array(await srcRes.arrayBuffer());
     } else {
       const srcRes = await fetch(trimTarget.src);
       if (!srcRes.ok) throw new Error("Couldn't fetch the source video");
@@ -994,13 +1058,19 @@ trimGo.addEventListener("click", async () => {
     const blob = new Blob([outData.buffer], {type: "video/mp4"});
     if (blob.size < 1000) throw new Error("Trim failed — check the time range");
     if (blob.size > UPLOAD_MAX) throw new Error(
-      "Trimmed clip is " + fmtSize(blob.size) + " — still over the 70 MB limit. " +
+      "Trimmed clip is " + fmtSize(blob.size) + " — still over the 40 MB limit. " +
       "Pick a shorter range, or tick Precise cut (re-encoding shrinks the file a lot).");
 
     setLog("Uploading... 0%");
     await ghUploadVideo(`${VIDEO_FOLDER}/${outName}`, blob,
       (replace ? "Trim clip: " : "Trimmed clip: ") + outName,
       p => setLog("Uploading... " + Math.round(p * 100) + "%"));
+    if (replace && trimTarget.assetId) {
+      // the original lived on the release — remove the old big version
+      await fetch(GH_API + "/releases/assets/" + trimTarget.assetId, {
+        method: "DELETE", headers: ghHeaders()
+      }).catch(()=>{});
+    }
 
     setLog("Done ✓ " + outName + " uploaded. It may take a minute before it plays.", "ok");
     showToast("Trimmed video uploaded");

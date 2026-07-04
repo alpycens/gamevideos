@@ -59,6 +59,20 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 
 /* ---------- toolbar ---------- */
 .toolbar{max-width:1100px;margin:18px auto 0;padding:0 20px;display:flex;gap:10px}
+.cat-bar{
+  max-width:1100px;margin:14px auto 0;padding:0 20px;display:flex;gap:8px;
+  overflow-x:auto;scrollbar-width:none;
+}
+.cat-bar::-webkit-scrollbar{display:none}
+.cat-chip{
+  font-family:'Chakra Petch',sans-serif;font-size:13px;letter-spacing:.05em;
+  border:1px solid var(--line);border-radius:999px;padding:7px 15px;
+  background:var(--panel);color:var(--muted);cursor:pointer;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:7px;transition:color .15s,border-color .15s;
+}
+.cat-chip:hover{color:var(--text);border-color:#3a4560}
+.cat-chip.active{background:var(--amber);border-color:var(--amber);color:#1a1408;font-weight:600}
+.cat-chip .n{opacity:.65;font-size:11.5px}
 .search{
   flex:1;display:flex;align-items:center;gap:10px;background:var(--panel);
   border:1px solid var(--line);border-radius:var(--radius);padding:11px 16px;
@@ -260,6 +274,8 @@ body.admin .admin-only{display:inline-flex !important}
   </label>
 </div>
 
+<div class="cat-bar" id="catBar"></div>
+
 <div id="content"></div>
 
 
@@ -280,6 +296,10 @@ body.admin .admin-only{display:inline-flex !important}
       <button class="btn admin-only" id="trimOpenBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
         Trim
+      </button>
+      <button class="btn admin-only" id="catBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+        Folder
       </button>
       <button class="btn admin-only" id="renameBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -319,6 +339,12 @@ body.admin .admin-only{display:inline-flex !important}
         GitHub → Settings → Developer settings → <b>Personal access tokens (Fine-grained)</b> →
         select only this repo, grant <b>Contents: Read and write</b>. Never share the token with anyone.
       </div>
+    </div>
+
+    <div class="field">
+      <label>Folder / game (optional — applied to everything in this batch)</label>
+      <input id="uploadCategory" type="text" list="catList" placeholder="e.g. Albion Online" autocomplete="off">
+      <datalist id="catList"></datalist>
     </div>
 
     <div class="drop" id="dropZone">
@@ -435,6 +461,9 @@ const searchInput = document.getElementById("searchInput");
 
 const toast = document.getElementById("toast");
 let allVideos = [];
+let categories = {};        // { "video.mp4": "Albion Online", ... }
+let categoriesSha = null;   // sha of categories.json for updates
+let activeCat = "__all";
 
 /* ---------- helpers ---------- */
 function fmtSize(b){
@@ -481,10 +510,21 @@ async function load(){
   showState('<div class="spinner"></div>Loading clips...');
   try{
     const bust = "t=" + Date.now();
-    const [folderRes, relRes] = await Promise.all([
+    const [folderRes, relRes, catRes] = await Promise.all([
       fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&${bust}`),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`)
+      fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/categories.json?ref=${BRANCH}&${bust}`)
     ]);
+
+    categories = {};
+    categoriesSha = null;
+    if (catRes.ok) {
+      try {
+        const j = await catRes.json();
+        categoriesSha = j.sha;
+        categories = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,"")))));
+      } catch(e) { categories = {}; }
+    }
 
     const vids = [];
     if (folderRes.ok) {
@@ -510,13 +550,15 @@ async function load(){
     }
 
     allVideos = vids.sort((a,b) => b.name.localeCompare(a.name));
+    allVideos.forEach(v => v.category = categories[v.name] || null);
+    renderCatBar();
     if (!allVideos.length) {
       countChip.textContent = "0 CLIPS";
       showState(`<div class="big">No clips yet</div>
         Upload your first video with the button in the top right.`);
       return;
     }
-    render(allVideos);
+    applyFilters();
     const v = new URLSearchParams(location.search).get("v");
     if (v) {
       const hit = allVideos.find(x => x.name === v);
@@ -550,7 +592,7 @@ function render(list){
       </div>
       <div class="meta">
         <div class="name">${niceName(v.name)}</div>
-        <div class="info">${fmtSize(v.size)}</div>
+        <div class="info">${fmtSize(v.size)}${v.category ? " · " + v.category : ""}</div>
       </div>`;
     const vid = card.querySelector("video");
     vid.addEventListener("loadedmetadata", () => {
@@ -568,10 +610,43 @@ function render(list){
   content.appendChild(grid);
 }
 
-searchInput.addEventListener("input", () => {
+function catList(){
+  return [...new Set(allVideos.map(v => v.category).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+}
+
+function renderCatBar(){
+  const bar = document.getElementById("catBar");
+  const cats = catList();
+  if (!cats.length) { bar.innerHTML = ""; bar.style.display = "none"; return; }
+  bar.style.display = "";
+  const hasOther = allVideos.some(v => !v.category);
+  if (activeCat !== "__all" && activeCat !== "__other" && !cats.includes(activeCat)) activeCat = "__all";
+  if (activeCat === "__other" && !hasOther) activeCat = "__all";
+  const chips = [
+    { id: "__all", label: "All", n: allVideos.length },
+    ...cats.map(c => ({ id: c, label: c, n: allVideos.filter(v => v.category === c).length })),
+    ...(hasOther ? [{ id: "__other", label: "Other", n: allVideos.filter(v => !v.category).length }] : [])
+  ];
+  bar.innerHTML = "";
+  chips.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "cat-chip" + (activeCat === c.id ? " active" : "");
+    b.innerHTML = `${c.label} <span class="n">${c.n}</span>`;
+    b.addEventListener("click", () => { activeCat = c.id; renderCatBar(); applyFilters(); });
+    bar.appendChild(b);
+  });
+}
+
+function applyFilters(){
   const q = searchInput.value.toLowerCase().trim();
-  render(allVideos.filter(v => v.name.toLowerCase().includes(q)));
-});
+  let list = allVideos;
+  if (activeCat === "__other") list = list.filter(v => !v.category);
+  else if (activeCat !== "__all") list = list.filter(v => v.category === activeCat);
+  if (q) list = list.filter(v => v.name.toLowerCase().includes(q));
+  render(list);
+}
+
+searchInput.addEventListener("input", applyFilters);
 
 /* ---------- player ---------- */
 const playerModal = document.getElementById("playerModal");
@@ -688,6 +763,48 @@ async function renameAsset(video, newName){
   }, "Rename");
 }
 
+/* ---------- categories (admin) ---------- */
+async function saveCategories(extraNames = []){
+  // strip entries for videos that no longer exist
+  const clean = {};
+  for (const [k, val] of Object.entries(categories)) {
+    if (val && (allVideos.some(v => v.name === k) || extraNames.includes(k))) clean[k] = val;
+  }
+  categories = clean;
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(categories, null, 2))));
+  const body = { message: "Update video folders", content: b64, branch: BRANCH };
+  if (categoriesSha) body.sha = categoriesSha;
+  const r = await fetch(GH_API + "/contents/categories.json", {
+    method: "PUT", headers: ghHeaders(), body: JSON.stringify(body)
+  });
+  if (!r.ok) throw new Error("Couldn't save folders (GitHub error " + r.status + ")");
+  categoriesSha = (await r.json()).content.sha;
+}
+
+document.getElementById("catBtn").addEventListener("click", () => {
+  if (!current) return;
+  const target = current;
+  askPin(async () => {
+    if (!getToken()) { showToast("Save your GitHub token first (upload panel)"); return; }
+    const existing = catList();
+    const hint = existing.length ? "\nExisting: " + existing.join(", ") : "";
+    const input = prompt("Folder / game for this video (leave empty to remove):" + hint, target.category || "");
+    if (input === null) return;
+    const cat = input.trim();
+    try {
+      if (cat) categories[target.name] = cat;
+      else delete categories[target.name];
+      target.category = cat || null;
+      await saveCategories();
+      showToast(cat ? "Moved to " + cat : "Removed from folder");
+      renderCatBar();
+      applyFilters();
+    } catch(e) {
+      showToast("Error: " + e.message);
+    }
+  });
+});
+
 document.getElementById("renameBtn").addEventListener("click", () => {
   if (!current) return;
   const target = current;
@@ -704,6 +821,11 @@ document.getElementById("renameBtn").addEventListener("click", () => {
     try {
       if (target.assetId) await renameAsset(target, newName);
       else await renameFolderFile(target, newName);
+      if (categories[target.name]) {
+        categories[newName] = categories[target.name];
+        delete categories[target.name];
+        await saveCategories([newName]).catch(()=>{});
+      }
       showToast("Renamed to " + newName);
       closePlayer();
       load();
@@ -849,6 +971,8 @@ function openUpload(){
   upList.innerHTML = "";
   upErr.classList.remove("show");
   uploadStart.disabled = true;
+  document.getElementById("catList").innerHTML =
+    catList().map(c => `<option value="${c.replace(/"/g,"&quot;")}">`).join("");
   uploadModal.classList.add("open");
 }
 function closeUpload(){ uploadModal.classList.remove("open"); }
@@ -909,6 +1033,7 @@ uploadStart.addEventListener("click", async () => {
   uploadStart.disabled = true;
   upErr.classList.remove("show");
   let okCount = 0, eligible = 0;
+  const uploadedNames = [];
 
   for (const q of queue){
     const status = q.el.querySelector(".status");
@@ -930,6 +1055,8 @@ uploadStart.addEventListener("click", async () => {
       status.textContent = "Done ✓";
       status.className = "status ok";
       okCount++;
+      const cat = document.getElementById("uploadCategory").value.trim();
+      if (cat) { categories[safeName] = cat; uploadedNames.push(safeName); }
     }catch(e){
       status.textContent = e.message;
       status.className = "status fail";
@@ -938,6 +1065,9 @@ uploadStart.addEventListener("click", async () => {
   }
 
   uploadStart.disabled = false;
+  if (uploadedNames.length) {
+    try { await saveCategories(uploadedNames); } catch(e) { showUpErr(e.message); }
+  }
   if (okCount === eligible && okCount > 0){
     showToast(okCount + (okCount === 1 ? " video uploaded" : " videos uploaded"));
     setTimeout(() => { closeUpload(); load(); }, 900);
@@ -1141,6 +1271,14 @@ trimGo.addEventListener("click", async () => {
       await fetch(GH_API + "/releases/assets/" + trimTarget.assetId, {
         method: "DELETE", headers: ghHeaders()
       }).catch(()=>{});
+    }
+
+    // inherit the folder of the source (or the one picked in the upload panel)
+    const inheritCat = trimTarget.category ||
+      (trimTarget.local ? document.getElementById("uploadCategory").value.trim() : "");
+    if (inheritCat) {
+      categories[outName] = inheritCat;
+      await saveCategories([outName]).catch(()=>{});
     }
 
     setLog("Done ✓ " + outName + " uploaded. It may take a minute before it plays.", "ok");

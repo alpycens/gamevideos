@@ -2,7 +2,8 @@
   "folders": {
     "VS-SEKTA.mp4": "GV",
     "vs-deathgiver.mp4": "Albion Online",
-    "yt:rdL_e1JfFBg": "Albion Online"
+    "yt:rdL_e1JfFBg": "Albion Online",
+    "yt:KgAttEx0CYg": "GV"
   },
   "durations": {},
   "mobile": {
@@ -12,6 +13,10 @@
     {
       "id": "rdL_e1JfFBg",
       "title": "Whispering vs Deathgiver"
+    },
+    {
+      "id": "KgAttEx0CYg",
+      "title": "VS Sekta"
     }
   ]
 }

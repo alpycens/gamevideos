@@ -1,11 +1,17 @@
 {
   "folders": {
     "VS-SEKTA.mp4": "GV",
-    "vs-deathgiver.mp4": "Albion Online"
+    "vs-deathgiver.mp4": "Albion Online",
+    "yt:rdL_e1JfFBg": "Albion Online"
   },
   "durations": {},
   "mobile": {
     "vs-deathgiver.mp4": "rdL_e1JfFBg"
   },
-  "yt": []
+  "yt": [
+    {
+      "id": "rdL_e1JfFBg",
+      "title": "ss"
+    }
+  ]
 }

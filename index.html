@@ -482,12 +482,8 @@ const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
    page (up to 2 GB per file) — those are listed automatically. */
 const UPLOAD_MAX = 40 * 1024 * 1024;
 const RELEASE_TAG = "clips";
-/* Release videos are streamed through sw.js (a service worker in this
-   repo) which fixes the MIME type so phones play them in the player. */
-const SW_OK = "serviceWorker" in navigator;
-/* iPhones/iPads won't stream GitHub release files (wrong MIME type, and
-   Safari bypasses service workers for media) — on iOS we download the
-   file into the player with a progress bar, then play it. */
+/* iPhones can't stream GitHub release files (wrong MIME type) — if the
+   player errors there, we fall back to downloading into the player. */
 const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
@@ -617,9 +613,7 @@ async function load(){
           if (vids.some(v => v.name === a.name)) return;
           vids.push({
             name: a.name, size: a.size, assetId: a.id,
-            src: SW_OK
-              ? "sw-video/" + a.id + "/" + encodeURIComponent(a.name)
-              : a.browser_download_url,
+            src: a.browser_download_url,
             apiUrl: a.url
           });
         });
@@ -832,14 +826,8 @@ function openPlayer(v){
     dlBtn.href = v.src;
     dlBtn.setAttribute("download", v.name);
     setLoadBar(null);
-    if (v.assetId && IS_IOS) {
-      // iPhone + GitHub release file: download into the player, then play
-      modalVideo.removeAttribute("src");
-      playAssetBlob(v);
-    } else {
-      modalVideo.src = v.src;
-      modalVideo.play().catch(()=>{});
-    }
+    modalVideo.src = v.src;
+    modalVideo.play().catch(()=>{});
   }
   playerModal.classList.add("open");
   const u = new URL(location);
@@ -1812,21 +1800,13 @@ splitBtn.addEventListener("click", async () => {
   }
 });
 
-/* Register the video service worker, then load the gallery.
-   If it fails (old browser, private mode) videos fall back to
-   direct GitHub URLs + the blob fallback in the player. */
-(SW_OK
-  ? navigator.serviceWorker.register("sw.js")
-      .then(() => navigator.serviceWorker.ready)
-      .then(() => new Promise(res => {
-        if (navigator.serviceWorker.controller) return res();
-        // first ever visit: worker activates but doesn't control the page yet
-        navigator.serviceWorker.addEventListener("controllerchange", () => res(), { once: true });
-        setTimeout(res, 1500);
-      }))
-      .catch(() => {})
-  : Promise.resolve()
-).then(load);
+/* Clean up the old experimental service worker if a visitor still has it. */
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations()
+    .then(rs => rs.forEach(r => r.unregister()))
+    .catch(()=>{});
+}
+load();
 </script>
 </body>
 </html>

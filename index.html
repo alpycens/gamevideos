@@ -146,6 +146,10 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .modal-bar{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
 .admin-only{display:none !important}
 body.admin .admin-only{display:inline-flex !important}
+#playerModal.yt #dlBtn,
+#playerModal.yt #trimOpenBtn{display:none !important}
+#removeYtBtn{display:none !important}
+body.admin #playerModal.yt #removeYtBtn{display:inline-flex !important}
 .modal-bar .title{
   flex:1;font-family:'Chakra Petch',sans-serif;font-size:15px;letter-spacing:.03em;
   min-width:160px;word-break:break-word;
@@ -284,6 +288,10 @@ body.admin .admin-only{display:inline-flex !important}
 <div class="modal" id="playerModal">
   <div class="player-box">
     <video id="modalVideo" controls playsinline preload="auto"></video>
+    <div id="ytWrap" style="display:none">
+      <iframe id="ytFrame" allow="autoplay; encrypted-media; fullscreen" allowfullscreen
+        style="width:100%;aspect-ratio:16/9;max-height:70vh;border:1px solid var(--line);border-radius:var(--radius);background:#000;display:block"></iframe>
+    </div>
     <div class="modal-bar">
       <div class="title" id="modalTitle"></div>
       <button class="btn" id="copyBtn">
@@ -306,6 +314,7 @@ body.admin .admin-only{display:inline-flex !important}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
         Rename
       </button>
+      <button class="btn" id="removeYtBtn" style="color:var(--rec)">Remove</button>
       <button class="btn primary" id="closeBtn">Close</button>
     </div>
   </div>
@@ -357,6 +366,16 @@ body.admin .admin-only{display:inline-flex !important}
 
     <div class="up-list" id="upList"></div>
     <div class="err" id="upErr"></div>
+
+    <div class="field" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">
+      <label>Long video? Add it as a YouTube unlisted link — plays perfectly on phones, no size limit</label>
+      <input id="ytUrl" type="text" placeholder="https://youtu.be/..." autocomplete="off" spellcheck="false">
+      <input id="ytTitle" type="text" placeholder="Title shown in the gallery" autocomplete="off" style="margin-top:8px">
+      <div class="hint" style="display:flex;align-items:center;gap:10px;margin-top:8px">
+        <button class="btn" id="ytAddBtn" style="flex:none">Add YouTube video</button>
+        <span>Upload to YouTube as <b>Unlisted</b>, paste the link here. Uses the folder field above.</span>
+      </div>
+    </div>
 
     <div class="panel-actions">
       <button class="btn" id="makeThumbsBtn">Make thumbnails</button>
@@ -414,6 +433,10 @@ body.admin .admin-only{display:inline-flex !important}
 
     <div class="panel-actions">
       <button class="btn" id="trimClose">Close</button>
+      <button class="btn" id="splitBtn" title="Cuts the whole video into ~35 MB parts that play on phones">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="7" height="8" rx="1"/><rect x="14" y="8" width="7" height="8" rx="1"/></svg>
+        Split into parts
+      </button>
       <button class="btn primary" id="trimGo">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88"/><path d="M14.47 14.48 20 20"/><path d="M8.12 8.12 12 12"/></svg>
         Trim &amp; upload
@@ -444,11 +467,9 @@ const VIDEO_EXT = [".mp4",".webm",".mov",".m4v",".ogg"];
    page (up to 2 GB per file) — those are listed automatically. */
 const UPLOAD_MAX = 40 * 1024 * 1024;
 const RELEASE_TAG = "clips";
-/* Optional: Cloudflare Worker URL that streams release videos with the
-   correct video MIME type (fixes iPhone playback for big files).
-   Example: "https://clips-proxy.yourname.workers.dev"
-   Leave empty to serve release files directly from GitHub. */
-const VIDEO_PROXY = "";
+/* Release videos are streamed through sw.js (a service worker in this
+   repo) which fixes the MIME type so phones play them in the player. */
+const SW_OK = "serviceWorker" in navigator;
 const FF_VER = "0.12.10", FF_UTIL_VER = "0.12.1", FF_CORE_VER = "0.12.6";
 
 function detectRepo(){
@@ -470,6 +491,7 @@ const toast = document.getElementById("toast");
 let allVideos = [];
 let categories = {};        // { "video.mp4": "Albion Online", ... }
 let durationsMap = {};      // { "video.mp4": seconds }
+let ytList = [];            // [ {id, title}, ... ] — YouTube unlisted videos
 let thumbsMap = {};         // { "video.mp4": {url, sha} }
 let categoriesSha = null;   // sha of categories.json for updates
 let activeCat = "__all";
@@ -537,6 +559,7 @@ async function load(){
         if (parsed && parsed.folders) {
           categories = parsed.folders;
           durationsMap = parsed.durations || {};
+          ytList = Array.isArray(parsed.yt) ? parsed.yt : [];
         } else {
           categories = parsed || {};
         }
@@ -574,19 +597,30 @@ async function load(){
           if (vids.some(v => v.name === a.name)) return;
           vids.push({
             name: a.name, size: a.size, assetId: a.id,
-            src: VIDEO_PROXY
-              ? VIDEO_PROXY.replace(/\/$/,"") + "/?u=" + encodeURIComponent(a.browser_download_url)
+            src: SW_OK
+              ? "sw-video/" + a.id + "/" + encodeURIComponent(a.name)
               : a.browser_download_url,
             apiUrl: a.url
           });
         });
     }
 
-    allVideos = vids.sort((a,b) => b.name.localeCompare(a.name));
+    ytList.forEach(y => vids.push({
+      name: "yt:" + y.id, ytId: y.id, isYt: true,
+      title: y.title || "YouTube video", size: 0
+    }));
+
+    allVideos = vids.sort((a,b) =>
+      (b.isYt ? b.title : b.name).localeCompare(a.isYt ? a.title : a.name));
     allVideos.forEach(v => {
       v.category = categories[v.name] || null;
-      v.thumb = thumbsMap[v.name] ? thumbsMap[v.name].url : null;
-      v.dur = durationsMap[v.name] || null;
+      if (v.isYt) {
+        v.thumb = "https://i.ytimg.com/vi/" + v.ytId + "/hqdefault.jpg";
+        v.dur = null;
+      } else {
+        v.thumb = thumbsMap[v.name] ? thumbsMap[v.name].url : null;
+        v.dur = durationsMap[v.name] || null;
+      }
     });
     renderCatBar();
     if (!allVideos.length) {
@@ -630,8 +664,8 @@ function render(list){
         </button>
       </div>
       <div class="meta">
-        <div class="name">${niceName(v.name)}</div>
-        <div class="info">${fmtSize(v.size)}${v.category ? " · " + v.category : ""}</div>
+        <div class="name">${v.isYt ? v.title : niceName(v.name)}</div>
+        <div class="info">${v.isYt ? "YouTube" : fmtSize(v.size)}${v.category ? " · " + v.category : ""}</div>
       </div>`;
     const vid = card.querySelector("video");
     if (vid && !v.dur) {
@@ -700,14 +734,29 @@ let blobFallbackUrl = null;
 
 function openPlayer(v){
   current = v;
-  modalVideo.poster = v.thumb || "";
-  modalVideo.dataset.fallbackTried = "";
-  modalVideo.src = v.src;
-  modalTitle.textContent = niceName(v.name);
-  dlBtn.href = v.src;
-  dlBtn.setAttribute("download", v.name);
+  const ytWrap = document.getElementById("ytWrap");
+  const ytFrame = document.getElementById("ytFrame");
+  playerModal.classList.toggle("yt", !!v.isYt);
+  if (v.isYt) {
+    modalVideo.style.display = "none";
+    modalVideo.removeAttribute("src");
+    modalVideo.load();
+    ytWrap.style.display = "";
+    ytFrame.src = "https://www.youtube-nocookie.com/embed/" + v.ytId + "?rel=0&playsinline=1&autoplay=1";
+    modalTitle.textContent = v.title;
+  } else {
+    ytFrame.src = "";
+    ytWrap.style.display = "none";
+    modalVideo.style.display = "";
+    modalVideo.poster = v.thumb || "";
+    modalVideo.dataset.fallbackTried = "";
+    modalVideo.src = v.src;
+    modalTitle.textContent = niceName(v.name);
+    dlBtn.href = v.src;
+    dlBtn.setAttribute("download", v.name);
+    modalVideo.play().catch(()=>{});
+  }
   playerModal.classList.add("open");
-  modalVideo.play().catch(()=>{});
   const u = new URL(location);
   u.searchParams.set("v", v.name);
   history.replaceState(null,"",u);
@@ -748,6 +797,7 @@ function closePlayer(){
   modalVideo.pause();
   modalVideo.removeAttribute("src");
   modalVideo.load();
+  document.getElementById("ytFrame").src = "";
   const u = new URL(location);
   u.searchParams.delete("v");
   history.replaceState(null,"",u);
@@ -847,7 +897,7 @@ async function saveCategories(extraNames = []){
   for (const [k, val] of Object.entries(durationsMap)) if (val && keep(k)) durations[k] = val;
   categories = folders;
   durationsMap = durations;
-  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({ folders, durations }, null, 2))));
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({ folders, durations, yt: ytList }, null, 2))));
   const body = { message: "Update video metadata", content: b64, branch: BRANCH };
   if (categoriesSha) body.sha = categoriesSha;
   const r = await fetch(GH_API + "/contents/categories.json", {
@@ -923,6 +973,19 @@ document.getElementById("renameBtn").addEventListener("click", () => {
   const target = current;
   askPin(async () => {
     if (!getToken()) { showToast("Save your GitHub token first (upload panel)"); return; }
+    if (target.isYt) {
+      const input = prompt("New title for this video:", target.title);
+      if (input === null || !input.trim()) return;
+      try {
+        const entry = ytList.find(y => y.id === target.ytId);
+        if (entry) entry.title = input.trim();
+        await saveCategories([target.name]);
+        showToast("Title updated");
+        closePlayer();
+        load();
+      } catch(e) { showToast("Error: " + e.message); }
+      return;
+    }
     const ext = (target.name.match(/\.[^.]+$/) || [".mp4"])[0];
     let input = prompt("New name for this video:", target.name);
     if (input === null) return;
@@ -1066,6 +1129,57 @@ document.getElementById("bigUploadBtn").addEventListener("click", async () => {
   } finally {
     btn.disabled = false;
   }
+});
+
+function parseYtId(url){
+  const m = String(url).match(
+    /(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/))([\w-]{11})/
+  );
+  return m ? m[1] : null;
+}
+
+document.getElementById("ytAddBtn").addEventListener("click", async () => {
+  if (!getToken()) { showUpErr("Enter and save your GitHub token first."); tokenField.style.display = ""; return; }
+  const urlIn = document.getElementById("ytUrl");
+  const titleIn = document.getElementById("ytTitle");
+  const id = parseYtId(urlIn.value.trim());
+  if (!id) { showUpErr("That doesn't look like a YouTube link."); return; }
+  if (ytList.some(y => y.id === id)) { showUpErr("This video is already in the gallery."); return; }
+  const title = titleIn.value.trim() || "YouTube video";
+  const btn = document.getElementById("ytAddBtn");
+  btn.disabled = true;
+  try {
+    ytList.push({ id, title });
+    const cat = document.getElementById("uploadCategory").value.trim();
+    if (cat) categories["yt:" + id] = cat;
+    await saveCategories(["yt:" + id]);
+    showToast("YouTube video added");
+    urlIn.value = ""; titleIn.value = "";
+    closeUpload();
+    load();
+  } catch(e) {
+    ytList = ytList.filter(y => y.id !== id);
+    showUpErr(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("removeYtBtn").addEventListener("click", () => {
+  if (!current || !current.isYt) return;
+  const target = current;
+  askPin(async () => {
+    if (!getToken()) { showToast("Save your GitHub token first (upload panel)"); return; }
+    if (!confirm(`Remove "${target.title}" from the gallery? (The YouTube video itself is not deleted.)`)) return;
+    try {
+      ytList = ytList.filter(y => y.id !== target.ytId);
+      delete categories[target.name];
+      await saveCategories();
+      showToast("Removed from gallery");
+      closePlayer();
+      load();
+    } catch(e) { showToast("Error: " + e.message); }
+  });
 });
 
 document.getElementById("makeThumbsBtn").addEventListener("click", async () => {
@@ -1478,7 +1592,136 @@ trimGo.addEventListener("click", async () => {
   }
 });
 
-load();
+/* ---------- split into phone-friendly parts ---------- */
+const splitBtn = document.getElementById("splitBtn");
+
+splitBtn.addEventListener("click", async () => {
+  if (!trimTarget) return;
+  if (!getToken()) { setLog("Save your GitHub token in the upload panel first.", "fail"); return; }
+
+  const totalDur = trimVideo.duration;
+  if (!isFinite(totalDur) || totalDur <= 0) {
+    setLog("Video length unknown yet — wait for the preview to load.", "fail"); return;
+  }
+
+  const srcSize = trimTarget.local ? trimTarget.local.size : trimTarget.size;
+  const TARGET = 32 * 1024 * 1024;
+  const nParts = Math.max(1, Math.ceil(srcSize / TARGET));
+  if (nParts === 1) {
+    setLog("This video is already small enough — just use Trim & upload.", "fail"); return;
+  }
+  const partDur = totalDur / nParts;
+
+  const ext = (trimTarget.name.match(/\.[^.]+$/) || [".mp4"])[0];
+  const base = trimTarget.name.replace(/\.[^.]+$/,"").replace(/[^\w.\-() ]+/g,"_");
+  const partName = i => `${base}_part${String(i).padStart(2,"0")}${ext}`;
+  for (let i = 1; i <= nParts; i++) {
+    if (allVideos.some(v => v.name === partName(i))) {
+      setLog(`"${partName(i)}" already exists — rename or remove it first.`, "fail"); return;
+    }
+  }
+
+  splitBtn.disabled = true;
+  trimGo.disabled = true;
+  try{
+    const ff = await getFFmpeg(()=>{});
+
+    setLog("Reading the source video...");
+    let srcData;
+    if (trimTarget.local) {
+      srcData = new Uint8Array(await trimTarget.local.arrayBuffer());
+    } else if (trimTarget.apiUrl) {
+      const r = await fetch(trimTarget.apiUrl, { headers: { "Accept": "application/octet-stream" } });
+      if (!r.ok) throw new Error("Couldn't fetch the source video");
+      srcData = new Uint8Array(await r.arrayBuffer());
+    } else {
+      const r = await fetch(trimTarget.src);
+      if (!r.ok) throw new Error("Couldn't fetch the source video");
+      srcData = new Uint8Array(await r.arrayBuffer());
+    }
+
+    const inFile = "in" + ext;
+    await ff.writeFile(inFile, srcData);
+
+    const inheritCat = trimTarget.category ||
+      (trimTarget.local ? document.getElementById("uploadCategory").value.trim() : "");
+    const doneNames = [];
+
+    for (let i = 0; i < nParts; i++){
+      const s = i * partDur;
+      const e = Math.min((i + 1) * partDur, totalDur);
+      const outName = partName(i + 1);
+      const outFile = "part" + (i + 1) + ext;
+
+      setLog(`Part ${i+1}/${nParts}: cutting...`);
+      await ff.exec(["-ss", String(s), "-to", String(e), "-i", inFile,
+        "-c", "copy", "-avoid_negative_ts", "make_zero", "-movflags", "+faststart", outFile]);
+      let data = await ff.readFile(outFile);
+      await ff.deleteFile(outFile).catch(()=>{});
+      let blob = new Blob([data.buffer], { type: "video/mp4" });
+
+      if (blob.size > UPLOAD_MAX) {
+        setLog(`Part ${i+1}/${nParts}: re-encoding (too big)...`);
+        await ff.exec(["-i", inFile, "-ss", String(s), "-to", String(e),
+          "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+          "-profile:v", "high", "-level", "4.1", "-pix_fmt", "yuv420p",
+          "-maxrate", "6M", "-bufsize", "12M",
+          "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", outFile]);
+        data = await ff.readFile(outFile);
+        await ff.deleteFile(outFile).catch(()=>{});
+        blob = new Blob([data.buffer], { type: "video/mp4" });
+        if (blob.size > UPLOAD_MAX) throw new Error(`Part ${i+1} is still too big — try again with Precise cut on smaller ranges`);
+      }
+
+      setLog(`Part ${i+1}/${nParts}: uploading 0%`);
+      await ghUploadVideo(`${VIDEO_FOLDER}/${outName}`, blob, "Split part: " + outName,
+        p => setLog(`Part ${i+1}/${nParts}: uploading ${Math.round(p * 100)}%`));
+
+      try {
+        const t = await captureThumb(blob);
+        if (t) {
+          await ghUploadVideo(`thumbs/${outName}.jpg`, t.blob, "Thumb: " + outName);
+          durationsMap[outName] = t.duration;
+        }
+      } catch(e) {}
+      if (inheritCat) categories[outName] = inheritCat;
+      doneNames.push(outName);
+    }
+
+    await ff.deleteFile(inFile).catch(()=>{});
+    await saveCategories(doneNames).catch(()=>{});
+
+    setLog(`Done ✓ ${nParts} parts uploaded — they play on phones. You can now delete the big original from GitHub's release page.`, "ok");
+    showToast(nParts + " parts uploaded");
+    if (trimLocalEntry) {
+      trimLocalEntry.el.remove();
+      queue = queue.filter(q => q !== trimLocalEntry);
+      trimLocalEntry = null;
+      uploadStart.disabled = queue.length === 0;
+    }
+  }catch(err){
+    setLog("Error: " + err.message, "fail");
+  }finally{
+    splitBtn.disabled = false;
+    trimGo.disabled = false;
+  }
+});
+
+/* Register the video service worker, then load the gallery.
+   If it fails (old browser, private mode) videos fall back to
+   direct GitHub URLs + the blob fallback in the player. */
+(SW_OK
+  ? navigator.serviceWorker.register("sw.js")
+      .then(() => navigator.serviceWorker.ready)
+      .then(() => new Promise(res => {
+        if (navigator.serviceWorker.controller) return res();
+        // first ever visit: worker activates but doesn't control the page yet
+        navigator.serviceWorker.addEventListener("controllerchange", () => res(), { once: true });
+        setTimeout(res, 1500);
+      }))
+      .catch(() => {})
+  : Promise.resolve()
+).then(load);
 </script>
 </body>
 </html>

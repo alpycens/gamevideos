@@ -94,6 +94,7 @@ h1{font-family:'Chakra Petch',sans-serif;font-size:26px;letter-spacing:.04em;tex
 .card:hover,.card:focus-within{transform:translateY(-3px);border-color:#3a4560;outline:none}
 .thumb{position:relative;aspect-ratio:16/9;background:var(--panel-2);overflow:hidden}
 .thumb video{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
 .thumb .play{
   position:absolute;inset:0;display:grid;place-items:center;
   background:linear-gradient(to top,rgba(13,16,23,.55),transparent 55%);
@@ -358,6 +359,7 @@ body.admin .admin-only{display:inline-flex !important}
     <div class="err" id="upErr"></div>
 
     <div class="panel-actions">
+      <button class="btn" id="makeThumbsBtn">Make thumbnails</button>
       <button class="btn" id="bigUploadBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
         Big files (2 GB) →
@@ -462,6 +464,8 @@ const searchInput = document.getElementById("searchInput");
 const toast = document.getElementById("toast");
 let allVideos = [];
 let categories = {};        // { "video.mp4": "Albion Online", ... }
+let durationsMap = {};      // { "video.mp4": seconds }
+let thumbsMap = {};         // { "video.mp4": {url, sha} }
 let categoriesSha = null;   // sha of categories.json for updates
 let activeCat = "__all";
 
@@ -510,20 +514,41 @@ async function load(){
   showState('<div class="spinner"></div>Loading clips...');
   try{
     const bust = "t=" + Date.now();
-    const [folderRes, relRes, catRes] = await Promise.all([
+    const [folderRes, relRes, catRes, thumbRes] = await Promise.all([
       fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${VIDEO_FOLDER}?ref=${BRANCH}&${bust}`),
       fetch(`https://api.github.com/repos/${owner}/${repo}/releases/tags/${RELEASE_TAG}?${bust}`),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/categories.json?ref=${BRANCH}&${bust}`)
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/categories.json?ref=${BRANCH}&${bust}`),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contents/thumbs?ref=${BRANCH}&${bust}`)
     ]);
 
     categories = {};
+    durationsMap = {};
     categoriesSha = null;
     if (catRes.ok) {
       try {
         const j = await catRes.json();
         categoriesSha = j.sha;
-        categories = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,"")))));
+        const parsed = JSON.parse(decodeURIComponent(escape(atob(j.content.replace(/\n/g,"")))));
+        if (parsed && parsed.folders) {
+          categories = parsed.folders;
+          durationsMap = parsed.durations || {};
+        } else {
+          categories = parsed || {};
+        }
       } catch(e) { categories = {}; }
+    }
+
+    thumbsMap = {};
+    if (thumbRes.ok) {
+      try {
+        const items = await thumbRes.json();
+        items.filter(i => i.type === "file" && i.name.toLowerCase().endsWith(".jpg"))
+          .forEach(i => {
+            thumbsMap[i.name.replace(/\.jpg$/i,"")] = {
+              url: "thumbs/" + encodeURIComponent(i.name), sha: i.sha
+            };
+          });
+      } catch(e) {}
     }
 
     const vids = [];
@@ -550,7 +575,11 @@ async function load(){
     }
 
     allVideos = vids.sort((a,b) => b.name.localeCompare(a.name));
-    allVideos.forEach(v => v.category = categories[v.name] || null);
+    allVideos.forEach(v => {
+      v.category = categories[v.name] || null;
+      v.thumb = thumbsMap[v.name] ? thumbsMap[v.name].url : null;
+      v.dur = durationsMap[v.name] || null;
+    });
     renderCatBar();
     if (!allVideos.length) {
       countChip.textContent = "0 CLIPS";
@@ -583,9 +612,11 @@ function render(list){
     card.tabIndex = 0;
     card.innerHTML = `
       <div class="thumb">
-        <video preload="metadata" muted playsinline src="${v.src}#t=0.5"></video>
+        ${v.thumb
+          ? `<img src="${v.thumb}" loading="lazy" alt="">`
+          : `<video preload="metadata" muted playsinline src="${v.src}#t=0.5"></video>`}
         <div class="play"><svg viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>
-        <div class="dur"></div>
+        <div class="dur">${v.dur ? fmtDur(v.dur) : ""}</div>
         <button class="card-link" title="Copy video link">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>
         </button>
@@ -595,9 +626,11 @@ function render(list){
         <div class="info">${fmtSize(v.size)}${v.category ? " · " + v.category : ""}</div>
       </div>`;
     const vid = card.querySelector("video");
-    vid.addEventListener("loadedmetadata", () => {
-      card.querySelector(".dur").textContent = fmtDur(vid.duration);
-    }, {once:true});
+    if (vid && !v.dur) {
+      vid.addEventListener("loadedmetadata", () => {
+        card.querySelector(".dur").textContent = fmtDur(vid.duration);
+      }, {once:true});
+    }
     card.querySelector(".card-link").addEventListener("click", e => {
       e.stopPropagation();
       copyShare(v.name);
@@ -657,6 +690,7 @@ let current = null;
 
 function openPlayer(v){
   current = v;
+  modalVideo.poster = v.thumb || "";
   modalVideo.src = v.src;
   modalTitle.textContent = niceName(v.name);
   dlBtn.href = v.src;
@@ -724,7 +758,7 @@ pinModal.addEventListener("click", e => { if (e.target === pinModal) closePin();
 document.getElementById("uploadOpenBtn").addEventListener("click", () => askPin(openUpload));
 
 /* ---------- rename (admin) ---------- */
-async function renameFolderFile(video, newName){
+async function ghMove(moves, message){
   // move = add the same blob at the new path + delete the old path, in one commit
   const H = ghHeaders();
   let ref;
@@ -736,19 +770,18 @@ async function renameFolderFile(video, newName){
   }
   const parentSha = ref.object.sha;
   const parentCommit = await ghJson(GH_API + "/git/commits/" + parentSha, { headers: H }, "Commit lookup");
+  const entries = [];
+  moves.forEach(m => {
+    entries.push({ path: m.to, mode: "100644", type: "blob", sha: m.sha });
+    entries.push({ path: m.from, mode: "100644", type: "blob", sha: null });
+  });
   const tree = await ghJson(GH_API + "/git/trees", {
     method: "POST", headers: H,
-    body: JSON.stringify({
-      base_tree: parentCommit.tree.sha,
-      tree: [
-        { path: VIDEO_FOLDER + "/" + newName, mode: "100644", type: "blob", sha: video.sha },
-        { path: VIDEO_FOLDER + "/" + video.name, mode: "100644", type: "blob", sha: null }
-      ]
-    })
+    body: JSON.stringify({ base_tree: parentCommit.tree.sha, tree: entries })
   }, "Tree creation");
   const commit = await ghJson(GH_API + "/git/commits", {
     method: "POST", headers: H,
-    body: JSON.stringify({ message: "Rename clip: " + video.name + " → " + newName, tree: tree.sha, parents: [parentSha] })
+    body: JSON.stringify({ message, tree: tree.sha, parents: [parentSha] })
   }, "Commit creation");
   await ghJson(GH_API + "/git/refs/heads/" + ref.ref.replace("refs/heads/",""), {
     method: "PATCH", headers: H,
@@ -766,19 +799,57 @@ async function renameAsset(video, newName){
 /* ---------- categories (admin) ---------- */
 async function saveCategories(extraNames = []){
   // strip entries for videos that no longer exist
-  const clean = {};
-  for (const [k, val] of Object.entries(categories)) {
-    if (val && (allVideos.some(v => v.name === k) || extraNames.includes(k))) clean[k] = val;
-  }
-  categories = clean;
-  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(categories, null, 2))));
-  const body = { message: "Update video folders", content: b64, branch: BRANCH };
+  const keep = k => allVideos.some(v => v.name === k) || extraNames.includes(k);
+  const folders = {}, durations = {};
+  for (const [k, val] of Object.entries(categories)) if (val && keep(k)) folders[k] = val;
+  for (const [k, val] of Object.entries(durationsMap)) if (val && keep(k)) durations[k] = val;
+  categories = folders;
+  durationsMap = durations;
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify({ folders, durations }, null, 2))));
+  const body = { message: "Update video metadata", content: b64, branch: BRANCH };
   if (categoriesSha) body.sha = categoriesSha;
   const r = await fetch(GH_API + "/contents/categories.json", {
     method: "PUT", headers: ghHeaders(), body: JSON.stringify(body)
   });
   if (!r.ok) throw new Error("Couldn't save folders (GitHub error " + r.status + ")");
   categoriesSha = (await r.json()).content.sha;
+}
+
+/* Grabs a small JPEG poster + duration from a video blob, in the browser. */
+function captureThumb(blob){
+  return captureThumbSrc(URL.createObjectURL(blob), true);
+}
+/* Same, but straight from a URL — streams only the frames it needs. */
+function captureThumbUrl(url){
+  return captureThumbSrc(url, false);
+}
+function captureThumbSrc(src, revoke){
+  return new Promise(resolve => {
+    let done = false;
+    const finish = val => {
+      if (!done) { done = true; if (revoke) URL.revokeObjectURL(src); resolve(val); }
+    };
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "metadata";
+    if (!revoke) v.crossOrigin = "anonymous";
+    v.onerror = () => finish(null);
+    v.onloadedmetadata = () => {
+      try { v.currentTime = Math.min(1, (v.duration || 2) / 2); } catch(e){ finish(null); }
+    };
+    v.onseeked = () => {
+      try{
+        const w = 480;
+        const h = Math.round(w * v.videoHeight / v.videoWidth) || 270;
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(v, 0, 0, w, h);
+        const dur = Math.round(v.duration);
+        c.toBlob(b => finish(b ? { blob: b, duration: dur } : null), "image/jpeg", 0.78);
+      }catch(e){ finish(null); }
+    };
+    setTimeout(() => finish(null), 15000);
+    v.src = src;
+  });
 }
 
 document.getElementById("catBtn").addEventListener("click", () => {
@@ -819,13 +890,25 @@ document.getElementById("renameBtn").addEventListener("click", () => {
     if (newName === target.name) return;
     if (allVideos.some(v => v.name === newName)) { showToast("That name is already taken"); return; }
     try {
+      const thumbEntry = thumbsMap[target.name];
+      const moves = [];
+      if (!target.assetId) {
+        moves.push({ from: VIDEO_FOLDER + "/" + target.name, to: VIDEO_FOLDER + "/" + newName, sha: target.sha });
+      }
+      if (thumbEntry) {
+        moves.push({ from: "thumbs/" + target.name + ".jpg", to: "thumbs/" + newName + ".jpg", sha: thumbEntry.sha });
+      }
       if (target.assetId) await renameAsset(target, newName);
-      else await renameFolderFile(target, newName);
+      if (moves.length) await ghMove(moves, "Rename clip: " + target.name + " → " + newName);
       if (categories[target.name]) {
         categories[newName] = categories[target.name];
         delete categories[target.name];
-        await saveCategories([newName]).catch(()=>{});
       }
+      if (durationsMap[target.name]) {
+        durationsMap[newName] = durationsMap[target.name];
+        delete durationsMap[target.name];
+      }
+      await saveCategories([newName]).catch(()=>{});
       showToast("Renamed to " + newName);
       closePlayer();
       load();
@@ -943,6 +1026,44 @@ document.getElementById("bigUploadBtn").addEventListener("click", async () => {
   }
 });
 
+document.getElementById("makeThumbsBtn").addEventListener("click", async () => {
+  if (!getToken()) { showUpErr("Enter and save your GitHub token first."); tokenField.style.display = ""; return; }
+  const btn = document.getElementById("makeThumbsBtn");
+  const missing = allVideos.filter(v => !v.thumb);
+  if (!missing.length) { showToast("All videos already have thumbnails"); return; }
+  btn.disabled = true;
+  upErr.classList.remove("show");
+  const doneNames = [];
+  let i = 0;
+  for (const v of missing){
+    i++;
+    btn.textContent = `Thumbnails ${i}/${missing.length}...`;
+    try {
+      // try streaming a frame first; fall back to downloading the file
+      let t = await captureThumbUrl(v.src);
+      if (!t && v.apiUrl) {
+        const r = await fetch(v.apiUrl, { headers: { "Accept": "application/octet-stream" } });
+        if (r.ok) t = await captureThumb(await r.blob());
+      }
+      if (t) {
+        await ghUploadVideo(`thumbs/${v.name}.jpg`, t.blob, "Thumb: " + v.name);
+        durationsMap[v.name] = t.duration;
+        doneNames.push(v.name);
+      }
+    } catch(e) {}
+  }
+  btn.textContent = "Make thumbnails";
+  btn.disabled = false;
+  if (doneNames.length) {
+    try { await saveCategories(doneNames); } catch(e) {}
+    showToast(doneNames.length + " thumbnails created");
+    closeUpload();
+    load();
+  } else {
+    showUpErr("Couldn't create thumbnails — try again.");
+  }
+});
+
 function blobToBase64(blob){
   return new Promise((res, rej) => {
     const r = new FileReader();
@@ -1052,11 +1173,20 @@ uploadStart.addEventListener("click", async () => {
         status.textContent = "Uploading... " + pct + "%";
       });
       bar.style.width = "100%";
+      status.textContent = "Finishing...";
+      try {
+        const t = await captureThumb(q.file);
+        if (t) {
+          await ghUploadVideo(`thumbs/${safeName}.jpg`, t.blob, "Thumb: " + safeName);
+          durationsMap[safeName] = t.duration;
+        }
+      } catch(e) {}
+      uploadedNames.push(safeName);
       status.textContent = "Done ✓";
       status.className = "status ok";
       okCount++;
       const cat = document.getElementById("uploadCategory").value.trim();
-      if (cat) { categories[safeName] = cat; uploadedNames.push(safeName); }
+      if (cat) categories[safeName] = cat;
     }catch(e){
       status.textContent = e.message;
       status.className = "status fail";
@@ -1273,13 +1403,21 @@ trimGo.addEventListener("click", async () => {
       }).catch(()=>{});
     }
 
+    // poster + duration for instant cards
+    setLog("Creating thumbnail...");
+    try {
+      const t = await captureThumb(blob);
+      if (t) {
+        await ghUploadVideo(`thumbs/${outName}.jpg`, t.blob, "Thumb: " + outName);
+        durationsMap[outName] = t.duration;
+      }
+    } catch(e) {}
+
     // inherit the folder of the source (or the one picked in the upload panel)
     const inheritCat = trimTarget.category ||
       (trimTarget.local ? document.getElementById("uploadCategory").value.trim() : "");
-    if (inheritCat) {
-      categories[outName] = inheritCat;
-      await saveCategories([outName]).catch(()=>{});
-    }
+    if (inheritCat) categories[outName] = inheritCat;
+    await saveCategories([outName]).catch(()=>{});
 
     setLog("Done ✓ " + outName + " uploaded. It may take a minute before it plays.", "ok");
     showToast("Trimmed video uploaded");

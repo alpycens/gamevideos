@@ -232,11 +232,6 @@ body.admin .admin-only{display:inline-flex !important}
   transition:opacity .2s,transform .2s;z-index:60;
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-
-footer{
-  max-width:1100px;margin:50px auto 0;padding:0 20px;color:var(--muted);
-  font-size:12.5px;font-family:'Chakra Petch',sans-serif;letter-spacing:.05em;
-}
 </style>
 </head>
 <body>
@@ -266,12 +261,11 @@ footer{
 
 <div id="content"></div>
 
-<footer id="footer"></footer>
 
 <!-- player -->
 <div class="modal" id="playerModal">
   <div class="player-box">
-    <video id="modalVideo" controls playsinline></video>
+    <video id="modalVideo" controls playsinline preload="auto"></video>
     <div class="modal-bar">
       <div class="title" id="modalTitle"></div>
       <button class="btn" id="copyBtn">
@@ -384,7 +378,7 @@ footer{
 
     <label class="check-row">
       <input type="checkbox" id="preciseCut">
-      Precise cut — frame-accurate but much slower (re-encodes the video)
+      Precise cut — frame-accurate, and re-encodes for smooth streaming (slower, but fixes stuttery playback)
     </label>
 
     <div class="trim-log" id="trimLog">Set the trim range, then hit "Trim &amp; upload".</div>
@@ -437,7 +431,7 @@ const {owner, repo} = detectRepo();
 const content = document.getElementById("content");
 const countChip = document.getElementById("countChip");
 const searchInput = document.getElementById("searchInput");
-const footer = document.getElementById("footer");
+
 const toast = document.getElementById("toast");
 let allVideos = [];
 
@@ -1120,9 +1114,12 @@ trimGo.addEventListener("click", async () => {
     setLog("Trimming...");
     const args = preciseCut.checked
       ? ["-i", inFile, "-ss", String(s), "-to", String(e),
-         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-c:a", "aac", outFile]
+         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+         "-maxrate", "8M", "-bufsize", "16M",
+         "-c:a", "aac", "-movflags", "+faststart", outFile]
       : ["-ss", String(s), "-to", String(e), "-i", inFile,
-         "-c", "copy", "-avoid_negative_ts", "make_zero", outFile];
+         "-c", "copy", "-avoid_negative_ts", "make_zero",
+         "-movflags", "+faststart", outFile];
     await ff.exec(args);
 
     const outData = await ff.readFile(outFile);
@@ -1161,7 +1158,6 @@ trimGo.addEventListener("click", async () => {
   }
 });
 
-footer.textContent = `${owner}/${repo} · auto-listed from the ${VIDEO_FOLDER}/ folder`;
 load();
 </script>
 </body>

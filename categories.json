@@ -1,14 +1,10 @@
 {
   "folders": {
-    "VS-SEKTA.mp4": "GV",
-    "vs-deathgiver.mp4": "Albion Online",
     "yt:rdL_e1JfFBg": "Albion Online",
     "yt:KgAttEx0CYg": "GV"
   },
   "durations": {},
-  "mobile": {
-    "vs-deathgiver.mp4": "rdL_e1JfFBg"
-  },
+  "mobile": {},
   "yt": [
     {
       "id": "rdL_e1JfFBg",
@@ -17,6 +13,10 @@
     {
       "id": "KgAttEx0CYg",
       "title": "VS Sekta"
+    },
+    {
+      "id": "wGZqbifJ3sw",
+      "title": "YouTube video"
     }
   ]
 }

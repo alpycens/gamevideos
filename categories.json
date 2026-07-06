@@ -2,7 +2,8 @@
   "folders": {
     "yt:rdL_e1JfFBg": "Albion Online",
     "yt:KgAttEx0CYg": "GV",
-    "yt:wGZqbifJ3sw": "GV"
+    "yt:wGZqbifJ3sw": "GV",
+    "yt:9NbyJo_Uo4U": "GV"
   },
   "durations": {},
   "mobile": {},
@@ -18,6 +19,10 @@
     {
       "id": "wGZqbifJ3sw",
       "title": "Some fun with NA guys"
+    },
+    {
+      "id": "9NbyJo_Uo4U",
+      "title": "2V2 Loss :("
     }
   ]
 }

@@ -3,7 +3,8 @@
     "yt:rdL_e1JfFBg": "Albion Online",
     "yt:KgAttEx0CYg": "GV",
     "yt:wGZqbifJ3sw": "GV",
-    "yt:9NbyJo_Uo4U": "GV"
+    "yt:9NbyJo_Uo4U": "GV",
+    "yt:Z6KXVMyIlpU": "GV"
   },
   "durations": {},
   "mobile": {},
@@ -23,6 +24,10 @@
     {
       "id": "9NbyJo_Uo4U",
       "title": "2V2 Loss :("
+    },
+    {
+      "id": "Z6KXVMyIlpU",
+      "title": "1vsZerg"
     }
   ]
 }

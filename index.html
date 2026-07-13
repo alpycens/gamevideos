@@ -1387,6 +1387,18 @@ function closeUpload(){ uploadModal.classList.remove("open"); }
 document.getElementById("uploadClose").addEventListener("click", closeUpload);
 uploadModal.addEventListener("click", e => { if (e.target === uploadModal) closeUpload(); });
 
+/* Save the token the moment it's pasted — no extra click needed. */
+function commitToken(){
+  const t = tokenInput.value.trim();
+  if (!t || t === localStorage.getItem("ghToken")) return;
+  localStorage.setItem("ghToken", t);
+  showToast("Token saved ✓");
+  tokenField.style.display = "none";
+}
+tokenInput.addEventListener("change", commitToken);
+tokenInput.addEventListener("paste", () => setTimeout(commitToken, 50));
+tokenInput.addEventListener("keydown", e => { if (e.key === "Enter") commitToken(); });
+
 document.getElementById("tokenForget").addEventListener("click", () => {
   localStorage.removeItem("ghToken");
   tokenInput.value = "";
